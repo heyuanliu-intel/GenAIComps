@@ -1,15 +1,17 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
-import base64
 import os
 import time
+import argparse
+
+from typing import List, Union
+from fastapi import Form, UploadFile
 
 from comps import (
     CustomLogger,
     OpeaComponentLoader,
-    SDImg2ImgInputs,
+    Base64ByteStrDoc,
     SDOutputs,
     ServiceType,
     opea_microservices,
@@ -20,9 +22,7 @@ from comps import (
 from comps.image2image.src.integrations.native import OpeaImageToImage
 
 args = None
-
 logger = CustomLogger("image2image")
-
 component_loader = None
 
 
@@ -32,13 +32,16 @@ component_loader = None
     endpoint="/v1/images/edits",
     host="0.0.0.0",
     port=9389,
-    input_datatype=SDImg2ImgInputs,
+    input_datatype=Base64ByteStrDoc,
     output_datatype=SDOutputs,
 )
 @register_statistics(names=["opea_service@image2image"])
-async def image2image(input: SDImg2ImgInputs):
+async def image2image(
+    image: Union[str, UploadFile, List[UploadFile]],  # accept base64 string or UploadFile
+    prompt: str = Form(None)
+):
     start = time.time()
-    results = await component_loader.invoke(input)
+    results = await component_loader.invoke(image=image, prompt=prompt)
     statistics_dict["opea_service@image2image"].append_latency(time.time() - start, None)
     return SDOutputs(images=results)
 

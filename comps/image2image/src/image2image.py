@@ -8,13 +8,16 @@ import threading
 import time
 import tempfile
 
+from typing import List, Union
+from fastapi import Form, UploadFile
+
 import torch
 from diffusers import AutoPipelineForImage2Image
 from diffusers.utils import load_image
 
 from comps import (
     CustomLogger,
-    SDImg2ImgInputs,
+    Base64ByteStrDoc,
     SDOutputs,
     ServiceType,
     opea_microservices,
@@ -76,28 +79,29 @@ def initialize():
     endpoint="/v1/images/edits",
     host="0.0.0.0",
     port=9389,
-    input_datatype=SDImg2ImgInputs,
+    input_datatype=Base64ByteStrDoc,
     output_datatype=SDOutputs,
 )
 @register_statistics(names=["opea_service@image2image"])
-async def image2image(input: SDImg2ImgInputs):
+async def image2image(
+    image: Union[str, UploadFile, List[UploadFile]],  # accept base64 string or UploadFile
+    prompt: str = Form(None)
+):
     initialize()
     start = time.time()
-    image_content = await input.image.read()
+    image_content = base64.b64decode(image) if isinstance(image, str) else await image.read()
 
     # Convert base64 input image to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-        temp_file.write(base64.b64decode(image_content))
+        temp_file.write(image_content)
         temp_file_path = temp_file.name
 
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@Loading image from temporary file:", temp_file_path)
     image = load_image(temp_file_path).convert("RGB")
     os.unlink(temp_file_path)
 
-    prompt = input.prompt
-    num_images_per_prompt = input.num_images_per_prompt
-
     generator = torch.manual_seed(args.seed)
-    images = pipe(image=image, prompt=prompt, generator=generator, num_images_per_prompt=num_images_per_prompt).images
+    images = pipe(image=image, prompt=prompt, generator=generator, num_images_per_prompt=1).images
     image_path = os.path.join(os.getcwd(), prompt.strip().replace(" ", "_").replace("/", ""))
     os.makedirs(image_path, exist_ok=True)
     results = []

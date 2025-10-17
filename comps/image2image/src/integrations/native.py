@@ -8,7 +8,10 @@ import os
 import tempfile
 import threading
 
-from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, SDImg2ImgInputs, ServiceType
+from typing import List, Union
+from fastapi import Form, UploadFile
+
+from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 
 logger = CustomLogger("opea_imagetoimage")
 logflag = os.getenv("LOGFLAG", False)
@@ -100,29 +103,29 @@ class OpeaImageToImage(OpeaComponent):
         if not health_status:
             logger.error("OpeaImageToImage health check failed.")
 
-    async def invoke(self, input: SDImg2ImgInputs):
+    async def invoke(self,
+                     image: Union[str, UploadFile, List[UploadFile]],  # accept base64 string or UploadFile
+                     prompt: str = Form(None)):
         """Invokes the ImageToImage service to generate Images for the provided input.
 
         Args:
             input (SDImg2ImgInputs): The input in SD images  format.
         """
 
-        image_content = await input.image.read()
+        image_content = base64.b64decode(image) if isinstance(image, str) else await image.read()
 
         # Convert base64 input image to a temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-            temp_file.write(base64.b64decode(image_content))
+            temp_file.write(image_content)
             temp_file_path = temp_file.name
 
+        print("##########################Loading image from temporary file:", temp_file_path)
         image = load_image(temp_file_path).convert("RGB")
         os.unlink(temp_file_path)
 
-        prompt = input.prompt
-        num_images_per_prompt = input.num_images_per_prompt
-
         generator = torch.manual_seed(self.seed)
         images = pipe(
-            image=image, prompt=prompt, generator=generator, num_images_per_prompt=num_images_per_prompt, num_inference_steps=5
+            image=image, prompt=prompt, generator=generator, num_images_per_prompt=1, num_inference_steps=5
         ).images
         results = []
         with tempfile.TemporaryDirectory() as image_path:

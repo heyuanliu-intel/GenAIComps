@@ -29,7 +29,7 @@ component_loader = None
 @register_microservice(
     name="opea_service@image2image",
     service_type=ServiceType.IMAGE2IMAGE,
-    endpoint="/v1/image2image",
+    endpoint="/v1/images/edits",
     host="0.0.0.0",
     port=9389,
     input_datatype=SDImg2ImgInputs,

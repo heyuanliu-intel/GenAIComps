@@ -7,6 +7,7 @@ import numpy as np
 from docarray import BaseDoc
 from docarray.documents import AudioDoc
 from docarray.typing import AudioUrl, ImageUrl
+from fastapi import File, Form, UploadFile
 from pydantic import Field, NonNegativeFloat, PositiveInt, conint, conlist, field_validator
 
 
@@ -560,8 +561,8 @@ class SDInputs(BaseDoc):
     lora_weight_name_or_path: Optional[str] = None
 
 
-class SDImg2ImgInputs(BaseDoc):
-    image: str
+class SDImg2ImgInputs(Base64ByteStrDoc):
+    image: UploadFile
     prompt: Union[str, List[str]] = None
     height: Optional[int] = None
     width: Optional[int] = None

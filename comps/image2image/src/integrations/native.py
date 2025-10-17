@@ -1,5 +1,8 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+from diffusers.utils import load_image
+from diffusers import AutoPipelineForImage2Image
+import torch
 import base64
 import os
 import tempfile
@@ -10,9 +13,6 @@ from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, SDImg2ImgI
 logger = CustomLogger("opea_imagetoimage")
 logflag = os.getenv("LOGFLAG", False)
 
-import torch
-from diffusers import AutoPipelineForImage2Image
-from diffusers.utils import load_image
 
 pipe = None
 args = None
@@ -106,13 +106,23 @@ class OpeaImageToImage(OpeaComponent):
         Args:
             input (SDImg2ImgInputs): The input in SD images  format.
         """
-        image = load_image(input.image).convert("RGB")
+
+        image_content = await input.image.read()
+
+        # Convert base64 input image to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+            temp_file.write(base64.b64decode(image_content))
+            temp_file_path = temp_file.name
+
+        image = load_image(temp_file_path).convert("RGB")
+        os.unlink(temp_file_path)
+
         prompt = input.prompt
         num_images_per_prompt = input.num_images_per_prompt
 
         generator = torch.manual_seed(self.seed)
         images = pipe(
-            image=image, prompt=prompt, generator=generator, num_images_per_prompt=num_images_per_prompt
+            image=image, prompt=prompt, generator=generator, num_images_per_prompt=num_images_per_prompt, num_inference_steps=5
         ).images
         results = []
         with tempfile.TemporaryDirectory() as image_path:

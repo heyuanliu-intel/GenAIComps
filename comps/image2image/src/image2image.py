@@ -6,6 +6,7 @@ import base64
 import os
 import threading
 import time
+import tempfile
 
 import torch
 from diffusers import AutoPipelineForImage2Image
@@ -72,17 +73,26 @@ def initialize():
 @register_microservice(
     name="opea_service@image2image",
     service_type=ServiceType.IMAGE2IMAGE,
-    endpoint="/v1/image2image",
+    endpoint="/v1/images/edits",
     host="0.0.0.0",
     port=9389,
     input_datatype=SDImg2ImgInputs,
     output_datatype=SDOutputs,
 )
 @register_statistics(names=["opea_service@image2image"])
-def image2image(input: SDImg2ImgInputs):
+async def image2image(input: SDImg2ImgInputs):
     initialize()
     start = time.time()
-    image = load_image(input.image).convert("RGB")
+    image_content = await input.image.read()
+
+    # Convert base64 input image to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+        temp_file.write(base64.b64decode(image_content))
+        temp_file_path = temp_file.name
+
+    image = load_image(temp_file_path).convert("RGB")
+    os.unlink(temp_file_path)
+
     prompt = input.prompt
     num_images_per_prompt = input.num_images_per_prompt
 

@@ -11,7 +11,7 @@ import threading
 from typing import List, Union
 from fastapi import Form, UploadFile
 
-from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
+from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType, SDOutputs
 
 logger = CustomLogger("opea_imagetoimage")
 logflag = os.getenv("LOGFLAG", False)
@@ -105,39 +105,82 @@ class OpeaImageToImage(OpeaComponent):
 
     async def invoke(self,
                      image: Union[str, UploadFile, List[UploadFile]],  # accept base64 string or UploadFile
-                     prompt: str = Form(None)):
+                     mask: Union[UploadFile, List[UploadFile]],
+                     prompt: str = Form(None),
+                     background: str = "auto",
+                     input_fidelity: str = Form(None),
+                     model: str = Form(None),
+                     n: int = 1,
+                     output_compression: int = 100,
+                     output_format: str = "png",
+                     partial_images: int = 0,
+                     quality: str = "auto",
+                     response_format: str = "openai",
+                     size: str = Form(None),
+                     stream: bool = Form(None),
+                     user: str = Form(None),
+                     seed: str = 0,
+                     guidance_scale: str = Form(None),
+                     true_cfg_scale: str = Form(None),
+                     num_inference_steps: str = Form(None),
+                     num_images_per_prompt: str = Form(None),
+                     ):
         """Invokes the ImageToImage service to generate Images for the provided input.
 
         Args:
             input (SDImg2ImgInputs): The input in SD images  format.
         """
 
-        image_content = base64.b64decode(image) if isinstance(image, str) else await image.read()
+        if isinstance(image, list):
+            input_images = []
+            for img in image:
+                image_content = await img.read()
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+                    temp_file.write(image_content)
+                    temp_file_path = temp_file.name
+                input_images.append(load_image(temp_file_path).convert("RGB"))
+                os.unlink(temp_file_path)
+                generator = torch.manual_seed(seed)
+                images = pipe(image=input_images,
+                              prompt=prompt,
+                              generator=generator,
+                              true_cfg_scale=true_cfg_scale,
+                              num_inference_steps=num_inference_steps,
+                              guidance_scale=guidance_scale,
+                              num_images_per_prompt=num_images_per_prompt).images
+        else:
+            image_content = base64.b64decode(image) if isinstance(image, str) else await image.read()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+                temp_file.write(image_content)
+                temp_file_path = temp_file.name
+            image = load_image(temp_file_path).convert("RGB")
+            os.unlink(temp_file_path)
+            generator = torch.manual_seed(seed)
+            images = pipe(image=input_images,
+                          prompt=prompt,
+                          generator=generator,
+                          true_cfg_scale=true_cfg_scale,
+                          num_inference_steps=num_inference_steps,
+                          guidance_scale=guidance_scale,
+                          num_images_per_prompt=num_images_per_prompt).images
 
-        # Convert base64 input image to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-            temp_file.write(image_content)
-            temp_file_path = temp_file.name
-
-        print("##########################Loading image from temporary file:", temp_file_path)
-        image = load_image(temp_file_path).convert("RGB")
-        os.unlink(temp_file_path)
-
-        generator = torch.manual_seed(self.seed)
-        images = pipe(
-            image=image, prompt=prompt, generator=generator, num_images_per_prompt=1, num_inference_steps=5
-        ).images
+        image_path = os.path.join(os.getcwd(), prompt.strip().replace(" ", "_").replace("/", ""))
+        os.makedirs(image_path, exist_ok=True)
         results = []
-        with tempfile.TemporaryDirectory() as image_path:
-            for i, image in enumerate(images):
-                save_path = os.path.join(image_path, f"image_{i + 1}.png")
-                image.save(save_path)
-                with open(save_path, "rb") as f:
-                    bytes = f.read()
-                b64_str = base64.b64encode(bytes).decode()
-                results.append(b64_str)
+        results_openai = []
+        for i, image in enumerate(images):
+            save_path = os.path.join(image_path, f"image_{i+1}.png")
+            image.save(save_path)
+            with open(save_path, "rb") as f:
+                bytes = f.read()
+            b64_str = base64.b64encode(bytes).decode()
+            results.append(b64_str)
+            results_openai.append({"b64_json": b64_str})
 
-        return results
+        if response_format == "openai":
+            pass
+        else:
+            return SDOutputs(images=results)
 
     def check_health(self) -> bool:
         """Checks the health of the ImageToImage service.

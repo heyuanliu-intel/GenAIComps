@@ -576,7 +576,14 @@ class SDImg2ImgInputs(Base64ByteStrDoc):
 
 
 class SDOutputs(BaseDoc):
+    background: str = "transparent"
+    created: str
+    data: list
+    output_format: str = "png"
+    quality: str = "high"
+    size: str
     images: list
+    usage: dict = {}
 
 
 class ImagePath(BaseDoc):

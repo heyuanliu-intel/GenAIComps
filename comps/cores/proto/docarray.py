@@ -561,7 +561,7 @@ class SDInputs(BaseDoc):
     lora_weight_name_or_path: Optional[str] = None
 
 
-class SDImg2ImgInputs(Base64ByteStrDoc):
+class SDImg2ImgInputs(BaseDoc):
     model: str = None
     prompt: str = None
     negative_prompt: Optional[str] = None

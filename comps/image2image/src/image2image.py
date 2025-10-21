@@ -8,7 +8,7 @@ import threading
 import time
 import tempfile
 
-from typing import List, Union
+from typing import List, Union, Optional
 from fastapi import Form, UploadFile
 
 import torch
@@ -17,7 +17,7 @@ from diffusers.utils import load_image
 
 from comps import (
     CustomLogger,
-    Base64ByteStrDoc,
+    SDImg2ImgInputs,
     SDOutputs,
     ServiceType,
     opea_microservices,
@@ -76,70 +76,40 @@ def initialize():
 @register_microservice(
     name="opea_service@image2image",
     service_type=ServiceType.IMAGE2IMAGE,
-    endpoint="/v1/images/edits",
+    endpoint="/images/generations",
     host="0.0.0.0",
     port=9389,
-    input_datatype=Base64ByteStrDoc,
+    input_datatype=SDImg2ImgInputs,
     output_datatype=SDOutputs,
 )
 @register_statistics(names=["opea_service@image2image"])
-async def image2image(
-    image: Union[str, UploadFile, List[UploadFile]],  # accept base64 string or UploadFile
-    mask: Union[UploadFile, List[UploadFile]],
-    prompt: str = Form(None),
-    background: str = "auto",
-    input_fidelity: str = Form(None),
-    model: str = Form(None),
-    n: int = 1,
-    output_compression: int = 100,
-    output_format: str = "png",
-    partial_images: int = 0,
-    quality: str = "auto",
-    response_format: str = "openai",
-    size: str = Form(None),
-    stream: bool = Form(None),
-    user: str = Form(None),
-    seed: str = 0,
-    guidance_scale: str = Form(None),
-    true_cfg_scale: str = Form(None),
-    num_inference_steps: str = Form(None),
-    num_images_per_prompt: str = Form(None),
-):
+async def image2image(input: SDImg2ImgInputs) -> SDOutputs:
     initialize()
     start = time.time()
 
-    if isinstance(image, list):
-        input_images = []
-        for img in image:
-            image_content = await img.read()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-                temp_file.write(image_content)
-                temp_file_path = temp_file.name
-            input_images.append(load_image(temp_file_path).convert("RGB"))
-            os.unlink(temp_file_path)
-            generator = torch.manual_seed(seed)
-            images = pipe(image=input_images,
-                          prompt=prompt,
-                          generator=generator,
-                          true_cfg_scale=true_cfg_scale,
-                          num_inference_steps=num_inference_steps,
-                          guidance_scale=guidance_scale,
-                          num_images_per_prompt=num_images_per_prompt).images
-    else:
-        image_content = base64.b64decode(image) if isinstance(image, str) else await image.read()
+    if input.image.startswith("data:image"):
+        image_content = base64.b64decode(image)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
             temp_file.write(image_content)
             temp_file_path = temp_file.name
         image = load_image(temp_file_path).convert("RGB")
         os.unlink(temp_file_path)
-        generator = torch.manual_seed(seed)
-        images = pipe(image=input_images,
-                      prompt=prompt,
-                      generator=generator,
-                      true_cfg_scale=true_cfg_scale,
-                      num_inference_steps=num_inference_steps,
-                      guidance_scale=guidance_scale,
-                      num_images_per_prompt=num_images_per_prompt).images
+    else:
+        image = load_image(temp_file_path).convert("RGB")
+
+    generator = torch.manual_seed(input.seed)
+    prompt = input.prompt
+    guidance_scale = input.guidance_scale
+    true_cfg_scale = input.cfg
+    num_inference_steps = input.num_inference_steps
+    num_images_per_prompt = input.batch_size
+    images = pipe(image=image,
+                  prompt=prompt,
+                  generator=generator,
+                  true_cfg_scale=true_cfg_scale,
+                  num_inference_steps=num_inference_steps,
+                  guidance_scale=guidance_scale,
+                  num_images_per_prompt=num_images_per_prompt).images
 
     image_path = os.path.join(os.getcwd(), prompt.strip().replace(" ", "_").replace("/", ""))
     os.makedirs(image_path, exist_ok=True)
@@ -155,10 +125,7 @@ async def image2image(
         results_openai.append({"b64_json": b64_str})
     statistics_dict["opea_service@image2image"].append_latency(time.time() - start, None)
 
-    if response_format == "openai":
-        pass
-    else:
-        return SDOutputs(images=results)
+    return SDOutputs(images=results)
 
 
 if __name__ == "__main__":

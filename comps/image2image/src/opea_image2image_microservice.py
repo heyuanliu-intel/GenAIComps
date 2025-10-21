@@ -11,7 +11,7 @@ from fastapi import Form, UploadFile
 from comps import (
     CustomLogger,
     OpeaComponentLoader,
-    Base64ByteStrDoc,
+    SDImg2ImgInputs,
     SDOutputs,
     ServiceType,
     opea_microservices,
@@ -29,19 +29,16 @@ component_loader = None
 @register_microservice(
     name="opea_service@image2image",
     service_type=ServiceType.IMAGE2IMAGE,
-    endpoint="/v1/images/edits",
+    endpoint="/images/generations",
     host="0.0.0.0",
     port=9389,
-    input_datatype=Base64ByteStrDoc,
+    input_datatype=SDImg2ImgInputs,
     output_datatype=SDOutputs,
 )
 @register_statistics(names=["opea_service@image2image"])
-async def image2image(
-    image: Union[str, UploadFile, List[UploadFile]],  # accept base64 string or UploadFile
-    prompt: str = Form(None)
-):
+async def image2image(input: SDImg2ImgInputs) -> SDOutputs:
     start = time.time()
-    results = await component_loader.invoke(image=image, prompt=prompt)
+    results = await component_loader.invoke(input)
     statistics_dict["opea_service@image2image"].append_latency(time.time() - start, None)
     return SDOutputs(images=results)
 

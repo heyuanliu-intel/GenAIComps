@@ -562,28 +562,24 @@ class SDInputs(BaseDoc):
 
 
 class SDImg2ImgInputs(Base64ByteStrDoc):
-    image: UploadFile
-    prompt: Union[str, List[str]] = None
-    height: Optional[int] = None
-    width: Optional[int] = None
-    strength: float = 0.8
-    num_inference_steps: Optional[int] = 50
+    model: str = None
+    prompt: str = None
+    negative_prompt: Optional[str] = None
+    image_size: Optional[str] = None
+    batch_size: Optional[int] = 1
+    seed: Optional[int] = 42
+    num_inference_steps: Optional[int] = 20
     guidance_scale: Optional[float] = 7.5
-    negative_prompt: Optional[Union[str, List[str]]] = None
-    num_images_per_prompt: int = 1
-    seed: int = 42
-    lora_weight_name_or_path: Optional[str] = None
+    cfg: Optional[float] = 4.0
+    image: Optional[str] = None
+    image2: Optional[str] = None
+    image3: Optional[str] = None
 
 
 class SDOutputs(BaseDoc):
-    background: str = "transparent"
-    created: str
-    data: list
-    output_format: str = "png"
-    quality: str = "high"
-    size: str
+    seed: int
     images: list
-    usage: dict = {}
+    timings: dict = {}
 
 
 class ImagePath(BaseDoc):

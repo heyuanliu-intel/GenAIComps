@@ -11,7 +11,7 @@ import threading
 from typing import List, Union
 from fastapi import Form, UploadFile
 
-from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType, SDOutputs
+from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType, SDOutputs, SDImg2ImgInputs
 
 logger = CustomLogger("opea_imagetoimage")
 logflag = os.getenv("LOGFLAG", False)
@@ -103,66 +103,36 @@ class OpeaImageToImage(OpeaComponent):
         if not health_status:
             logger.error("OpeaImageToImage health check failed.")
 
-    async def invoke(self,
-                     image: Union[str, UploadFile, List[UploadFile]],  # accept base64 string or UploadFile
-                     mask: Union[UploadFile, List[UploadFile]],
-                     prompt: str = Form(None),
-                     background: str = "auto",
-                     input_fidelity: str = Form(None),
-                     model: str = Form(None),
-                     n: int = 1,
-                     output_compression: int = 100,
-                     output_format: str = "png",
-                     partial_images: int = 0,
-                     quality: str = "auto",
-                     response_format: str = "openai",
-                     size: str = Form(None),
-                     stream: bool = Form(None),
-                     user: str = Form(None),
-                     seed: str = 0,
-                     guidance_scale: str = Form(None),
-                     true_cfg_scale: str = Form(None),
-                     num_inference_steps: str = Form(None),
-                     num_images_per_prompt: str = Form(None),
-                     ):
+    async def invoke(self, input: SDImg2ImgInputs) -> SDOutputs:
         """Invokes the ImageToImage service to generate Images for the provided input.
 
         Args:
             input (SDImg2ImgInputs): The input in SD images  format.
         """
 
-        if isinstance(image, list):
-            input_images = []
-            for img in image:
-                image_content = await img.read()
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-                    temp_file.write(image_content)
-                    temp_file_path = temp_file.name
-                input_images.append(load_image(temp_file_path).convert("RGB"))
-                os.unlink(temp_file_path)
-                generator = torch.manual_seed(seed)
-                images = pipe(image=input_images,
-                              prompt=prompt,
-                              generator=generator,
-                              true_cfg_scale=true_cfg_scale,
-                              num_inference_steps=num_inference_steps,
-                              guidance_scale=guidance_scale,
-                              num_images_per_prompt=num_images_per_prompt).images
-        else:
-            image_content = base64.b64decode(image) if isinstance(image, str) else await image.read()
+        if input.image.startswith("data:image"):
+            image_content = base64.b64decode(image)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
                 temp_file.write(image_content)
                 temp_file_path = temp_file.name
             image = load_image(temp_file_path).convert("RGB")
             os.unlink(temp_file_path)
-            generator = torch.manual_seed(seed)
-            images = pipe(image=input_images,
-                          prompt=prompt,
-                          generator=generator,
-                          true_cfg_scale=true_cfg_scale,
-                          num_inference_steps=num_inference_steps,
-                          guidance_scale=guidance_scale,
-                          num_images_per_prompt=num_images_per_prompt).images
+        else:
+            image = load_image(input.image).convert("RGB")
+
+        generator = torch.manual_seed(input.seed)
+        prompt = input.prompt
+        guidance_scale = input.guidance_scale
+        true_cfg_scale = input.cfg
+        num_inference_steps = input.num_inference_steps
+        num_images_per_prompt = input.batch_size
+        images = pipe(image=image,
+                      prompt=prompt,
+                      generator=generator,
+                      true_cfg_scale=true_cfg_scale,
+                      num_inference_steps=num_inference_steps,
+                      guidance_scale=guidance_scale,
+                      num_images_per_prompt=num_images_per_prompt).images
 
         image_path = os.path.join(os.getcwd(), prompt.strip().replace(" ", "_").replace("/", ""))
         os.makedirs(image_path, exist_ok=True)
@@ -177,10 +147,7 @@ class OpeaImageToImage(OpeaComponent):
             results.append(b64_str)
             results_openai.append({"b64_json": b64_str})
 
-        if response_format == "openai":
-            pass
-        else:
-            return SDOutputs(images=results)
+        return SDOutputs(images=results)
 
     def check_health(self) -> bool:
         """Checks the health of the ImageToImage service.

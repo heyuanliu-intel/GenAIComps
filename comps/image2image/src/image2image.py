@@ -95,7 +95,7 @@ async def image2image(input: SDImg2ImgInputs) -> SDOutputs:
         image = load_image(temp_file_path).convert("RGB")
         os.unlink(temp_file_path)
     else:
-        image = load_image(temp_file_path).convert("RGB")
+        image = load_image(input.image).convert("RGB")
 
     generator = torch.manual_seed(input.seed)
     prompt = input.prompt
@@ -125,7 +125,7 @@ async def image2image(input: SDImg2ImgInputs) -> SDOutputs:
         results_openai.append({"b64_json": b64_str})
     statistics_dict["opea_service@image2image"].append_latency(time.time() - start, None)
 
-    return SDOutputs(images=results)
+    return SDOutputs(seed=input.seed, images=results, timings={"inference": time.time() - start})
 
 
 if __name__ == "__main__":

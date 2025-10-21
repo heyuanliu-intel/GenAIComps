@@ -40,7 +40,7 @@ async def image2image(input: SDImg2ImgInputs) -> SDOutputs:
     start = time.time()
     results = await component_loader.invoke(input)
     statistics_dict["opea_service@image2image"].append_latency(time.time() - start, None)
-    return SDOutputs(images=results)
+    return results
 
 
 if __name__ == "__main__":

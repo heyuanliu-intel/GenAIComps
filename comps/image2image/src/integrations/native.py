@@ -7,6 +7,7 @@ import base64
 import os
 import tempfile
 import threading
+import time
 
 from typing import List, Union
 from fastapi import Form, UploadFile
@@ -110,6 +111,7 @@ class OpeaImageToImage(OpeaComponent):
             input (SDImg2ImgInputs): The input in SD images  format.
         """
 
+        start = time.time()
         if input.image.startswith("data:image"):
             image_content = base64.b64decode(image)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
@@ -147,7 +149,7 @@ class OpeaImageToImage(OpeaComponent):
             results.append(b64_str)
             results_openai.append({"b64_json": b64_str})
 
-        return SDOutputs(images=results)
+        return SDOutputs(seed=input.seed, images=results, timings={"inference": time.time() - start})
 
     def check_health(self) -> bool:
         """Checks the health of the ImageToImage service.

@@ -29,6 +29,6 @@ RUN pip install --no-cache-dir --upgrade pip setuptools uv && \
 USER user
 WORKDIR /home/user/comps/image2image/src
 
-RUN echo python opea_image2image_microservice.py --device hpu --use_hpu_graphs --bf16 >> run.sh
+RUN echo PT_HPU_LAZY_MODE=1 python3 opea_image2image_microservice.py --device hpu --use_hpu_graphs --bf16 >> run.sh
 
 CMD ["bash", "run.sh"]

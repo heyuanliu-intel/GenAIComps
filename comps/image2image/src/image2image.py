@@ -61,6 +61,15 @@ def initialize():
                         args.model_name_or_path,
                         **kwargs,
                     )
+                elif "Qwen-Image-Edit-2509" in args.model_name_or_path:
+                    from optimum.habana.diffusers import GaudiQwenImageEditPlusPipeline
+                    from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
+                    adapt_transformers_to_gaudi()
+
+                    pipe = GaudiQwenImageEditPlusPipeline.from_pretrained(
+                        args.model_name_or_path,
+                        **kwargs,
+                    )
                 else:
                     raise NotImplementedError(
                         "Only support stable-diffusion-xl now, " + f"model {args.model_name_or_path} not supported."

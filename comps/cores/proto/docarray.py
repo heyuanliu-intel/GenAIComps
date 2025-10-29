@@ -562,8 +562,9 @@ class SDInputs(BaseDoc):
 
 
 class SDImg2ImgInputs(BaseDoc):
+    image: Union[str, List[str]]
+    prompt: str
     model: str = None
-    prompt: str = None
     negative_prompt: Optional[str] = None
     image_size: Optional[str] = None
     batch_size: Optional[int] = 1
@@ -571,15 +572,22 @@ class SDImg2ImgInputs(BaseDoc):
     num_inference_steps: Optional[int] = 20
     guidance_scale: Optional[float] = 7.5
     cfg: Optional[float] = 4.0
-    image: Optional[str] = None
-    image2: Optional[str] = None
-    image3: Optional[str] = None
+
+
+class ImageData(BaseDoc):
+    b64_json: Optional[str] = None
+    revised_prompt: Optional[str] = None
+    url: Optional[str] = None
 
 
 class SDOutputs(BaseDoc):
-    seed: int
-    images: list
-    timings: dict = {}
+    background: str
+    created: int
+    data: List[ImageData]
+    output_format: str  #Either png, webp, or jpeg.
+    quality: str  #Either low, medium, or high.
+    size: str  # Either 1024x1024, 1024x1536, or 1536x1024.
+    usage: dict = {"input_tokens": 0, "output_tokens": 0, " total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}}
 
 
 class ImagePath(BaseDoc):

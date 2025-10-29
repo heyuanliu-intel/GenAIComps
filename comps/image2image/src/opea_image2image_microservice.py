@@ -29,12 +29,13 @@ component_loader = None
 @register_microservice(
     name="opea_service@image2image",
     service_type=ServiceType.IMAGE2IMAGE,
-    endpoint="/images/generations",
+    endpoint="/v1/images/generations",
     host="0.0.0.0",
     port=9389,
     input_datatype=SDImg2ImgInputs,
     output_datatype=SDOutputs,
 )
+
 @register_statistics(names=["opea_service@image2image"])
 async def image2image(input: SDImg2ImgInputs) -> SDOutputs:
     start = time.time()
@@ -61,6 +62,12 @@ if __name__ == "__main__":
             image2image_component_name,
             description=f"OPEA IMAGE2IMAGE Component: {image2image_component_name}",
             config=args.__dict__,
+            seed=args.seed,
+            model_name_or_path=args.model_name_or_path,
+            device=args.device,
+            token=args.token,
+            bf16=args.bf16,
+            use_hpu_graphs=args.use_hpu_graphs,
         )
     except Exception as e:
         logger.error(f"Failed to initialize components: {e}")

@@ -1074,3 +1074,39 @@ class ArbPostHearingAssistantChatCompletionRequest(ChatCompletionRequest):
     chunk_size: int = -1
     chunk_overlap: int = -1
     type: Optional[str] = None
+
+
+class ImagesEditsInput:
+    def __init__(
+        self,
+        image: Union[UploadFile, List[UploadFile]] = File(...),
+        prompt: str = Form(...),
+        background: Optional[str] = Form(None),
+        input_fidelity: Optional[str] = Form(None),
+        mask: Optional[UploadFile] = File(None),
+        model: Optional[str] = Form(None),
+        n: Optional[int] = Form(1),
+        output_compression: Optional[int] = Form(100),
+        output_format: Optional[str] = Form("png"),
+        partial_images: Optional[int] = Form(0),
+        quality: Optional[str] = Form(None),
+        response_format: Optional[str] = Form(None),
+        size: Optional[str] = Form(None),
+        stream: Optional[bool] = Form(False),
+        user: Optional[str] = Form(None),
+    ):
+        self.image = image
+        self.prompt = prompt
+        self.background = background
+        self.input_fidelity = input_fidelity
+        self.mask = mask
+        self.model = model
+        self.n = n
+        self.output_compression = output_compression
+        self.output_format = output_format
+        self.partial_images = partial_images
+        self.quality = quality
+        self.response_format = response_format
+        self.size = size
+        self.stream = stream
+        self.user = user

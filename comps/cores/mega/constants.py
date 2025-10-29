@@ -43,6 +43,7 @@ class ServiceType(Enum):
     PROMPT_REGISTRY = 26
     TEXT2QUERY = 27
     ARB_POST_HEARING_ASSISTANT = 28
+    IMAGES_EDITS = 29
 
 
 class MegaServiceEndpoint(Enum):

@@ -173,7 +173,7 @@ class OpeaImagesEdits(OpeaComponent):
                 b64_str = base64.b64encode(bytes).decode()
                 results_openai.append({"b64_json": b64_str})
 
-        return SDOutputs(background="opaque", created=int(time.time()), data=results_openai, output_format="jpeg", quality="high", size="0x0", usage={"input_tokens": 0, "output_tokens": 0, " total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}},)
+        return SDOutputs(background="opaque", created=int(time.time()), data=results_openai, output_format="jpeg", quality="high", size="0x0", usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}},)
 
     def check_health(self) -> bool:
         """Checks the health of the ImagesEdits service.

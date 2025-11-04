@@ -44,6 +44,7 @@ class ServiceType(Enum):
     TEXT2QUERY = 27
     ARB_POST_HEARING_ASSISTANT = 28
     IMAGES_EDITS = 29
+    IMAGES_GENERATIONS = 30
 
 
 class MegaServiceEndpoint(Enum):

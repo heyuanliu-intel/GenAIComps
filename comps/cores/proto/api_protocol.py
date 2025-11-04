@@ -1075,6 +1075,38 @@ class ArbPostHearingAssistantChatCompletionRequest(ChatCompletionRequest):
     chunk_overlap: int = -1
     type: Optional[str] = None
 
+class ImgsGeneInputs(BaseModel):
+    prompt: str
+    background: Optional[str] = None
+    model: str = None
+    moderation: Optional[str] = None
+    n: Optional[int] = 1
+    output_compression: Optional[int] = 100
+    output_format: Optional[str] = None
+    partial_images: Optional[int] = 0
+    quality: Optional[str] = " auto"
+    response_format: Optional[str] = None
+    size: Optional[str] = None
+    stream: Optional[bool] = False
+    style: Optional[str] = "vivid"
+    user: Optional[str] = None
+
+
+class ImageData(BaseModel):
+    b64_json: Optional[str] = None
+    revised_prompt: Optional[str] = None
+    url: Optional[str] = None
+
+
+class ImageOutputs(BaseModel):
+    background: str
+    created: int
+    data: List[ImageData]
+    output_format: str  #Either png, webp, or jpeg.
+    quality: str  #Either low, medium, or high.
+    size: str  # Either 1024x1024, 1024x1536, or 1536x1024.
+    usage: dict = {"input_tokens": 0, "output_tokens": 0, " total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}}
+
 
 class ImagesEditsInput:
     def __init__(

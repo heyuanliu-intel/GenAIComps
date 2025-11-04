@@ -18,6 +18,7 @@ from fastapi import Form, File, UploadFile, Depends
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType, SDOutputs
 from comps.cores.proto.api_protocol import (
     ImagesEditsInput,
+    ImageOutputs,
 )
 
 
@@ -121,11 +122,12 @@ class OpeaImagesEdits(OpeaComponent):
         )
         self.pipe = pipe
         self.seed = seed
+        self.generator = torch.manual_seed(self.seed)
         health_status = self.check_health()
         if not health_status:
             logger.error("OpeaImagesEdits health check failed.")
 
-    async def invoke(self, input: ImagesEditsInput) -> SDOutputs:
+    async def invoke(self, input: ImagesEditsInput) -> ImageOutputs:
         """Invokes the ImagesEdits service to generate Images for the provided input.
 
         Args:
@@ -135,6 +137,7 @@ class OpeaImagesEdits(OpeaComponent):
         start = time.time()
         logger.info(f"Loaded {input.image} images from input.")
         logger.info(f"prompt: {input.prompt}.")
+        logger.info(f"quality: {input.quality}.")
         if input.image and isinstance(input.image, list):
             image = []
             for img in input.image:
@@ -144,36 +147,51 @@ class OpeaImagesEdits(OpeaComponent):
                 image.append(image_open)
             logger.info(f"Loaded {len(image)} images from input.")
 
-        generator = torch.manual_seed(42)
         prompt = input.prompt
-        #guidance_scale = input.guidance_scale
-        #true_cfg_scale = input.cfg
-        #num_inference_steps = input.num_inference_steps
-        guidance_scale = 4
-        true_cfg_scale = 4
-        num_inference_steps = 20
+        guidance_scale = self.config.get("guidance_scale", 4)
+        true_cfg_scale = self.config.get("true_cfg_scale", 4)
+        num_inference_steps = self.config.get("num_inference_steps", 40)
+
+        if input.quality is not None:
+            if input.quality.lower() == "high":
+                num_inference_steps = 40
+            elif input.quality.lower() == "medium":
+                num_inference_steps = 20
+            elif input.quality.lower() == "low":
+                num_inference_steps = 10
+            elif input.quality.lower() == "auto":
+                num_inference_steps = self.config.get("num_inference_steps", 20)
+        else:
+                num_inference_steps = self.config.get("num_inference_steps", 20)
+
         results_openai = []
-        for i in range(input.n):
+        #clean_prompt = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff]', '', prompt)
+        #prefix = clean_prompt[:2] if clean_prompt else "img"
+        for j in range(input.n):
             images = pipe(image=image,
                         prompt=prompt,
-                        generator=generator,
+                        generator=self.generator,
                         true_cfg_scale=true_cfg_scale,
                         num_inference_steps=num_inference_steps,
                         guidance_scale=guidance_scale,
                         ).images
 
-            image_path = os.path.join(os.getcwd(), prompt.strip().replace(" ", "_").replace("/", ""))
-            os.makedirs(image_path, exist_ok=True)
+            #image_path = os.path.join(os.getcwd(), prefix)
+            #os.makedirs(image_path, exist_ok=True)
             
             for i, image in enumerate(images):
-                save_path = os.path.join(image_path, f"image_{i+1}.png")
-                image.save(save_path)
-                with open(save_path, "rb") as f:
-                    bytes = f.read()
-                b64_str = base64.b64encode(bytes).decode()
+                #save_path = os.path.join(image_path, f"image_{j}_{i+1}.png")
+                #image.save(save_path)
+                #with open(save_path, "rb") as f:
+                #    bytes = f.read()
+                #b64_str = base64.b64encode(bytes).decode()
+                #we can directly convert image to bytes without saving to disk
+                buffer = BytesIO()
+                image.save(buffer, format="PNG")
+                b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
                 results_openai.append({"b64_json": b64_str})
 
-        return SDOutputs(background="opaque", created=int(time.time()), data=results_openai, output_format="jpeg", quality="high", size="0x0", usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}},)
+        return ImageOutputs(background="opaque", created=int(time.time()), data=results_openai, output_format="PNG", quality="high", size="0x0", usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}},)
 
     def check_health(self) -> bool:
         """Checks the health of the ImagesEdits service.

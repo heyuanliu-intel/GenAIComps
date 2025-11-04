@@ -11,7 +11,6 @@ from fastapi import Form, File, UploadFile, Depends, Request
 from comps import (
     CustomLogger,
     OpeaComponentLoader,
-    SDOutputs,
     ServiceType,
     opea_microservices,
     register_microservice,
@@ -21,17 +20,23 @@ from comps import (
 from comps.images_edits.src.integrations.native import OpeaImagesEdits
 from comps.cores.proto.api_protocol import (
     ImagesEditsInput,
+    ImageOutputs,
 )
-
+logflag = os.getenv("LOGFLAG", False)
 args = None
 logger = CustomLogger("images_edits")
 component_loader = None
 
 async def resolve_images_edits_request(request: Request):
     form = await request.form()
-
+    
+    for key, value in form.items():
+        print(f"{key}: {value}")
+    images =[]
+    images += form.getlist("image")
+    images += form.getlist("image[]")
     common_args = {
-        "image": form.getlist("image[]"),
+        "image": images,
         "prompt": form.get("prompt", None),
         "background": form.get("background", None),
         "input_fidelity": form.get("input_fidelity", None),
@@ -50,6 +55,39 @@ async def resolve_images_edits_request(request: Request):
 
     return ImagesEditsInput(**common_args)
 
+@register_microservice(
+    name="opea_service@images_edits",
+    service_type=ServiceType.IMAGES_EDITS,
+    endpoint="/v1/models",
+    host="0.0.0.0",
+    port=9390,
+    methods=["GET"],
+)
+async def models():
+    # TODO: need format here
+    if os.getenv("MODEL", None):
+        model_name_or_path = os.getenv("MODEL")
+    else:
+        model_name_or_path = "Qwen/Qwen-Image-Edit-2509"
+    if logflag:
+        logger.info(f"get model:{model_name_or_path}")
+    model_info = {
+        "object": "list",
+        "data": [
+            {
+                "id": model_name_or_path,
+                "object": "model",
+                "created": None,
+                "owned_by": model_name_or_path,
+                "root": model_name_or_path,
+                "parent": None,
+                "max_model_len": None,
+                "permission": [],
+            }
+        ],
+    }
+
+    return model_info
 
 @register_microservice(
     name="opea_service@images_edits",
@@ -60,7 +98,7 @@ async def resolve_images_edits_request(request: Request):
 )
 
 @register_statistics(names=["opea_service@images_edits"])
-async def images_edits(input: ImagesEditsInput = Depends(resolve_images_edits_request)) -> SDOutputs:
+async def images_edits(input: ImagesEditsInput = Depends(resolve_images_edits_request)) -> ImageOutputs:
     start = time.time()
     results = await component_loader.invoke(input)
     statistics_dict["opea_service@images_edits"].append_latency(time.time() - start, None)
@@ -75,8 +113,13 @@ if __name__ == "__main__":
     parser.add_argument("--token", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--bf16", action="store_true")
+    parser.add_argument("--num_inference_steps", type=int, default=20)
+    parser.add_argument("--true_cfg_scale", type=float, default=4.0)
+    parser.add_argument("--guidance_scale", type=float, default=4.0)
 
     args = parser.parse_args()
+    if os.getenv("MODEL") is None:
+        os.environ["MODEL"] = args.model_name_or_path
     images_edits_component_name = os.getenv("IMAGES_EDITS_COMPONENT_NAME", "OPEA_IMAGES_EDITS")
     # Register components
     try:

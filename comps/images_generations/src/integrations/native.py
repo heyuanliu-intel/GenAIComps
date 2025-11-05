@@ -146,7 +146,8 @@ class OpeaImagesGenerations(OpeaComponent):
         prompt = input.prompt
         guidance_scale = self.config.get("guidance_scale", 4.0)
         true_cfg_scale = self.config.get("true_cfg_scale", 4.0)
-        logger.info(f"prompt: {prompt}, guidance_scale: {guidance_scale}, true_cfg_scale: {true_cfg_scale} quality: {input.quality}")
+        if logflag:
+            logger.info(f"prompt: {prompt}, guidance_scale: {guidance_scale}, true_cfg_scale: {true_cfg_scale} quality: {input.quality}")
         if input.quality is not None:
             if input.quality.lower() == "high":
                 num_inference_steps = 50

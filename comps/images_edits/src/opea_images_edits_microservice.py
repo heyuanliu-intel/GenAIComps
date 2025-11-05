@@ -29,12 +29,19 @@ component_loader = None
 
 async def resolve_images_edits_request(request: Request):
     form = await request.form()
-    
-    for key, value in form.items():
-        print(f"{key}: {value}")
+    if logflag:
+        for key in form.keys():
+            values = form.getlist(key)
+            for v in values:
+                logger.info(f"{key}: {v}")
+
     images =[]
-    images += form.getlist("image")
-    images += form.getlist("image[]")
+    if "image[]" in form:
+        images += form.getlist("image[]")
+    elif "image" in form:
+        images += form.getlist("image")
+    if logflag:
+        logger.info(f"common_args images: {images}")
     common_args = {
         "image": images,
         "prompt": form.get("prompt", None),
@@ -42,10 +49,10 @@ async def resolve_images_edits_request(request: Request):
         "input_fidelity": form.get("input_fidelity", None),
         "mask": form.get("mask", None),
         "model": form.get("model", None),
-        "n": form.get("n", 1),
-        "output_compression": form.get("output_compression", None),
+        "n": int(form.get("n", 1)),
+        "output_compression": int(form.get("output_compression", 100)),
         "output_format": form.get("output_format", None),
-        "partial_images": form.get("partial_images", False),
+        "partial_images": int(form.get("partial_images", 0)),
         "quality": form.get("quality", None),
         "response_format": form.get("response_format", "url"),
         "size": form.get("size", None),

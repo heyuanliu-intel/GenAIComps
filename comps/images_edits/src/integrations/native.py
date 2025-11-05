@@ -135,9 +135,6 @@ class OpeaImagesEdits(OpeaComponent):
         """
 
         start = time.time()
-        logger.info(f"Loaded {input.image} images from input.")
-        logger.info(f"prompt: {input.prompt}.")
-        logger.info(f"quality: {input.quality}.")
         if input.image and isinstance(input.image, list):
             image = []
             for img in input.image:
@@ -146,11 +143,13 @@ class OpeaImagesEdits(OpeaComponent):
                 image_open = Image.open(BytesIO(contents))
                 image.append(image_open)
             logger.info(f"Loaded {len(image)} images from input.")
+        else:
+            logger.error("No valid images provided in input.")
+            raise ValueError("No valid images provided in input.")
 
         prompt = input.prompt
         guidance_scale = self.config.get("guidance_scale", 4)
         true_cfg_scale = self.config.get("true_cfg_scale", 4)
-        num_inference_steps = self.config.get("num_inference_steps", 40)
 
         if input.quality is not None:
             if input.quality.lower() == "high":
@@ -159,19 +158,29 @@ class OpeaImagesEdits(OpeaComponent):
                 num_inference_steps = 20
             elif input.quality.lower() == "low":
                 num_inference_steps = 10
-            elif input.quality.lower() == "auto":
+            else:
                 num_inference_steps = self.config.get("num_inference_steps", 20)
         else:
                 num_inference_steps = self.config.get("num_inference_steps", 20)
 
         results_openai = []
+        width = None
+        height = None
+        if input.size is not None:
+            width_str, height_str = input.size.split("x")
+            width = int(width_str) if width_str.isdigit() else None
+            height = int(height_str) if height_str.isdigit() else None
         #clean_prompt = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff]', '', prompt)
         #prefix = clean_prompt[:2] if clean_prompt else "img"
+        if logflag:
+            logger.info(f"prompt: {prompt}, guidance_scale: {guidance_scale}, true_cfg_scale: {true_cfg_scale} quality: {input.quality} width: {width} height: {height}")
         for j in range(input.n):
             images = pipe(image=image,
                         prompt=prompt,
                         generator=self.generator,
                         true_cfg_scale=true_cfg_scale,
+                        width=width,
+                        height=height,
                         num_inference_steps=num_inference_steps,
                         guidance_scale=guidance_scale,
                         ).images

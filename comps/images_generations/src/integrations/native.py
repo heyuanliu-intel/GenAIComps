@@ -22,7 +22,7 @@ from comps.cores.proto.api_protocol import (
     ImageOutputs,
 )
 
-logger = CustomLogger("opea_imagetoimage")
+logger = CustomLogger("opea_ImagesGenerations")
 logflag = os.getenv("LOGFLAG", False)
 
 
@@ -146,8 +146,7 @@ class OpeaImagesGenerations(OpeaComponent):
         prompt = input.prompt
         guidance_scale = self.config.get("guidance_scale", 4.0)
         true_cfg_scale = self.config.get("true_cfg_scale", 4.0)
-        if logflag:
-            logger.info(f"prompt: {prompt}, guidance_scale: {guidance_scale}, true_cfg_scale: {true_cfg_scale} quality: {input.quality}")
+
         if input.quality is not None:
             if input.quality.lower() == "high":
                 num_inference_steps = 50
@@ -168,31 +167,34 @@ class OpeaImagesGenerations(OpeaComponent):
             height = int(height_str) if height_str.isdigit() else None
         #clean_prompt = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff]', '', prompt)
         #prefix = clean_prompt[:2] if clean_prompt else "img"
-        for j in range(input.n):
-            images = pipe(prompt=prompt,
-                        generator=self.generator,
-                        true_cfg_scale=true_cfg_scale,
-                        width=width,
-                        height=height,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,
-                        ).images
+        if logflag:
+            logger.info(f"prompt: {prompt}, guidance_scale: {guidance_scale}, true_cfg_scale: {true_cfg_scale} quality: {input.quality} width: {width} height: {height} num_images_per_prompt:{int(input.n)}")
 
-            #image_path = os.path.join(os.getcwd(), prefix)
-            #os.makedirs(image_path, exist_ok=True)
+        images = pipe(prompt=prompt,
+            generator=self.generator,
+            true_cfg_scale=true_cfg_scale,
+            width=width,
+            height=height,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            num_images_per_prompt = int(input.n)
+            ).images
 
-            for i, image in enumerate(images):
-                #save_path = os.path.join(image_path, f"image_{j}_{i+1}.png")
-                #image.save(save_path)
-                #with open(save_path, "rb") as f:
-                #    bytes = f.read()
-                #b64_str = base64.b64encode(bytes).decode()
-                #we can directly convert image to bytes without saving to disk
-                buffer = BytesIO()
-                image.save(buffer, format="PNG")
-                b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        #image_path = os.path.join(os.getcwd(), prefix)
+        #os.makedirs(image_path, exist_ok=True)
 
-                results_openai.append({"b64_json": b64_str})
+        for i, image in enumerate(images):
+            #save_path = os.path.join(image_path, f"image_{j}_{i+1}.png")
+            #image.save(save_path)
+            #with open(save_path, "rb") as f:
+            #    bytes = f.read()
+            #b64_str = base64.b64encode(bytes).decode()
+            #we can directly convert image to bytes without saving to disk
+            buffer = BytesIO()
+            image.save(buffer, format="PNG")
+            b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+            results_openai.append({"b64_json": b64_str})
 
         return ImageOutputs(background="opaque", created=int(time.time()), data=results_openai, output_format="PNG", quality="high", size="0x0", usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}},)
 

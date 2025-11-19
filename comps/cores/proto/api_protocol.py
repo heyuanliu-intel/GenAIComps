@@ -234,7 +234,7 @@ class RetrievalRequestArangoDB(RetrievalRequest):
     search_start: str | None = None  # "node", "edge", "chunk"
     search_mode: str | None = None  # "vector", "hybrid"
     num_centroids: int | None = None
-    distance_strategy: str | None = None  #  # "COSINE", "EUCLIDEAN_DISTANCE"
+    distance_strategy: str | None = None  # "COSINE", "EUCLIDEAN_DISTANCE"
     use_approx_search: bool | None = None
     enable_traversal: bool | None = None
     enable_summarizer: bool | None = None
@@ -1075,6 +1075,27 @@ class ArbPostHearingAssistantChatCompletionRequest(ChatCompletionRequest):
     chunk_overlap: int = -1
     type: Optional[str] = None
 
+
+class Text2VideoInput(BaseModel):
+    prompt: str
+    input_reference: Optional[str] = None
+    model: Optional[str] = None
+    seconds: Optional[int] = 4
+    size: Optional[str] = "720x1280"
+
+
+class Text2VideoOutput(BaseModel):
+    id: str
+    object: str = "video"
+    model: str
+    status: str
+    progress: int
+    created_at: int
+    size: str
+    seconds: str
+    quality: str
+
+
 class ImgsGeneInputs(BaseModel):
     prompt: str
     background: Optional[str] = None
@@ -1102,8 +1123,8 @@ class ImageOutputs(BaseModel):
     background: str
     created: int
     data: List[ImageData]
-    output_format: str  #Either png, webp, or jpeg.
-    quality: str  #Either low, medium, or high.
+    output_format: str  # Either png, webp, or jpeg.
+    quality: str  # Either low, medium, or high.
     size: str  # Either 1024x1024, 1024x1536, or 1536x1024.
     usage: dict = {"input_tokens": 0, "output_tokens": 0, " total_tokens": 0, "input_tokens_details": {"text_tokens": 0, "image_tokens": 0}}
 

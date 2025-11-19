@@ -1,0 +1,40 @@
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  text2video:
+    image: ${REGISTRY:-opea}/text2video:${TAG:-latest}
+    container_name: text2video-server
+    ports:
+      - ${TEXT2VIDEO_PORT:-9396}:9396
+    ipc: host
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      HF_TOKEN: ${HF_TOKEN}
+      MODEL: ${MODEL}
+    restart: unless-stopped
+
+  text2video-gaudi:
+    image: ${REGISTRY:-opea}/text2video-gaudi:${TAG:-latest}
+    container_name: text2video-gaudi-server
+    ports:
+      - ${TEXT2VIDEO_PORT:-9396}:9396
+    ipc: host
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      HF_TOKEN: ${HF_TOKEN}
+      MODEL: ${MODEL}
+      HABANA_VISIBLE_DEVICES: all
+      OMPI_MCA_btl_vader_single_copy_mechanism: none
+    runtime: habana
+    cap_add:
+      - SYS_NICE
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge

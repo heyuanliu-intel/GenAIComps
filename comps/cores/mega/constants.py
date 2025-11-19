@@ -45,6 +45,7 @@ class ServiceType(Enum):
     ARB_POST_HEARING_ASSISTANT = 28
     IMAGES_EDITS = 29
     IMAGES_GENERATIONS = 30
+    TEXT2VIDEO = 17
 
 
 class MegaServiceEndpoint(Enum):

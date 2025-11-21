@@ -1087,7 +1087,7 @@ class Text2VideoInput(BaseModel):
 class Text2VideoOutput(BaseModel):
     id: str
     object: str = "video"
-    model: str
+    model: str = None
     status: str
     progress: int
     created_at: int

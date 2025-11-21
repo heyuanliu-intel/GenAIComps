@@ -15,6 +15,7 @@ from comps import (
     statistics_dict,
 )
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
+from comps.text2video.src.integrations.native import OpeaText2Video
 
 # Initialize logger and component loader
 logger = CustomLogger("text2video")
@@ -110,7 +111,14 @@ def main():
     try:
         component_loader = OpeaComponentLoader(
             component_name=text2video_component_name,
+            description=f"OPEA IMAGES_GENERATIONS Component: {text2video_component_name}",
             config=args.__dict__,
+            seed=args.seed,
+            model_name_or_path=args.model_name_or_path,
+            device=args.device,
+            token=args.token,
+            bf16=args.bf16,
+            use_hpu_graphs=args.use_hpu_graphs,
         )
     except Exception as e:
         logger.error(f"Failed to initialize component loader: {e}")

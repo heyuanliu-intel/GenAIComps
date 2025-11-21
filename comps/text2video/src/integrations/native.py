@@ -55,7 +55,7 @@ def initialize(
         initialized = True
 
 
-@OpeaComponentRegistry.register("OPEA_TEXT_TO_VIDEO")
+@OpeaComponentRegistry.register("OPEA_TEXT2VIDEO")
 class OpeaText2Video(OpeaComponent):
     """A specialized Text2Video component for video generation."""
 
@@ -127,20 +127,21 @@ class OpeaText2Video(OpeaComponent):
             prompt=prompt,
             negative_prompt=negative_prompt,
             generator=self.generator,
-            width=width,
-            height=height,
+            width=int(width),
+            height=int(height),
             guidance_scale=guidance_scale,
             num_inference_steps=num_inference_steps,
             num_frames=num_frames,
         ).frames[0]
 
-        id = "video_123"
+        created = time.time()
+        id = f"video_{created}"
         export_to_video(output, f"{id}.mp4", fps=fps)
 
         latency = time.time() - start_time
         logger.info(f"Video generation completed in {latency:.2f} seconds.")
 
-        return Text2VideoOutput(id=id, seconds=input.seconds, size=input.size)
+        return Text2VideoOutput(id=id, model="Wan-AI/Wan2.2-TI2V-5B-Diffusers", status="queued", progress=0, created_at=int(created), seconds=str(input.seconds), size=input.size, quality="standard")
 
     def check_health(self) -> bool:
         """

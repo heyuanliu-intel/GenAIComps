@@ -104,7 +104,7 @@ async def get_video(video_id: str) -> Text2VideoOutput:
         if len(video_infos) != 5:
             return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
 
-        video_file = os.path.join(component_loader.video_dir, f"{video_id}.mp4")
+        video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
         if os.path.exists(video_file):
             return Text2VideoOutput(
                 id=video_id,
@@ -142,7 +142,7 @@ async def get_video(video_id: str) -> Text2VideoOutput:
 @register_statistics(names=["opea_service@text2video"])
 async def get_video_content(video_id: str):
     if component_loader:
-        video_file = os.path.join(component_loader.video_dir, f"{video_id}.mp4")
+        video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
         if os.path.exists(video_file):
             return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
         else:
@@ -172,6 +172,9 @@ def main():
 
     if os.getenv("MODEL") is None:
         os.environ["MODEL"] = args.model_name_or_path
+
+    if os.getenv("VIDEO_DIR") is None:
+        os.environ["VIDEO_DIR"] = args.video_dir
 
     text2video_component_name = os.getenv("TEXT2VIDEO_COMPONENT_NAME", "OPEA_TEXT2VIDEO")
 

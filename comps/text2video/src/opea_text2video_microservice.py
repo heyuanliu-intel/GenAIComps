@@ -111,10 +111,10 @@ async def get_video(video_id: str) -> Text2VideoOutput:
                 model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
                 status="succeeded",
                 progress=100,
-                created_at=int(video_infos[4]),
-                seconds=video_infos[1],
-                size=video_infos[2],
+                size=video_infos[1],
+                seconds=video_infos[2],
                 quality=video_infos[3],
+                created_at=int(video_infos[4]),
             )
         else:
             return Text2VideoOutput(
@@ -122,10 +122,10 @@ async def get_video(video_id: str) -> Text2VideoOutput:
                 model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
                 status="processing",
                 progress=0,
-                created_at=int(video_infos[4]),
-                seconds=video_infos[1],
-                size=video_infos[2],
+                size=video_infos[1],
+                seconds=video_infos[2],
                 quality=video_infos[3],
+                created_at=int(video_infos[4]),
             )
     else:
         raise RuntimeError("Component loader is not initialized.")

@@ -5,6 +5,7 @@
 FROM vault.habana.ai/gaudi-docker/1.21.0/ubuntu22.04/habanalabs/pytorch-installer-2.6.0 AS hpu
 RUN useradd -m -s /bin/bash user && \
     mkdir -p /home/user && \
+    mkdir -p /home/user/video && \
     chown -R user /home/user/
 
 COPY comps /home/user/comps

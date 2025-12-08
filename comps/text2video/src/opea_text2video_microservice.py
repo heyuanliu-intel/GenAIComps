@@ -5,6 +5,9 @@ import argparse
 import os
 import time
 
+from fastapi import status
+from fastapi.responses import FileResponse, JSONResponse
+
 from comps import (
     CustomLogger,
     OpeaComponentLoader,
@@ -16,6 +19,7 @@ from comps import (
 )
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
 from comps.text2video.src.integrations.native import OpeaText2Video
+
 
 # Initialize logger and component loader
 logger = CustomLogger("text2video")
@@ -85,6 +89,68 @@ async def text2video(input_data: Text2VideoInput) -> Text2VideoOutput:
     return results
 
 
+@register_microservice(
+    name="opea_service@text2video",
+    service_type=ServiceType.TEXT2VIDEO,
+    endpoint="/v1/videos/{video_id}",
+    host="0.0.0.0",
+    port=9396,
+    methods=["GET"],
+)
+@register_statistics(names=["opea_service@text2video"])
+async def get_video(video_id: str) -> Text2VideoOutput:
+    if component_loader:
+        video_infos = video_id.split("_")
+        if len(video_infos) != 5:
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
+
+        video_file = os.path.join(component_loader.video_dir, f"{video_id}.mp4")
+        if os.path.exists(video_file):
+            return Text2VideoOutput(
+                id=video_id,
+                model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+                status="succeeded",
+                progress=100,
+                created_at=int(video_infos[4]),
+                seconds=video_infos[1],
+                size=video_infos[2],
+                quality=video_infos[3],
+            )
+        else:
+            return Text2VideoOutput(
+                id=video_id,
+                model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+                status="processing",
+                progress=0,
+                created_at=int(video_infos[4]),
+                seconds=video_infos[1],
+                size=video_infos[2],
+                quality=video_infos[3],
+            )
+    else:
+        raise RuntimeError("Component loader is not initialized.")
+
+
+@register_microservice(
+    name="opea_service@text2video",
+    service_type=ServiceType.TEXT2VIDEO,
+    endpoint="/v1/videos/{video_id}/content",
+    host="0.0.0.0",
+    port=9396,
+    methods=["GET"],
+)
+@register_statistics(names=["opea_service@text2video"])
+async def get_video_content(video_id: str):
+    if component_loader:
+        video_file = os.path.join(component_loader.video_dir, f"{video_id}.mp4")
+        if os.path.exists(video_file):
+            return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
+        else:
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
+    else:
+        raise RuntimeError("Component loader is not initialized.")
+
+
 def main():
     """
     Main function to set up and run the text-to-video microservice.
@@ -100,6 +166,7 @@ def main():
     parser.add_argument("--token", type=str, default=None, help="Hugging Face token for private models.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for generation.")
     parser.add_argument("--bf16", action="store_true", help="Use bfloat16 precision.")
+    parser.add_argument("--video_dir", type=str, default="/home/user/video", help="Video output directory.")
 
     args = parser.parse_args()
 
@@ -119,6 +186,7 @@ def main():
             token=args.token,
             bf16=args.bf16,
             use_hpu_graphs=args.use_hpu_graphs,
+            video_dir=args.video_dir,
         )
     except Exception as e:
         logger.error(f"Failed to initialize component loader: {e}")

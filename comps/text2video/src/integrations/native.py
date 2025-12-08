@@ -5,6 +5,7 @@ import os
 import time
 import torch
 import threading
+import asyncio
 
 from diffusers.utils import export_to_video
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
@@ -16,6 +17,17 @@ logger = CustomLogger("opea_Text2Video")
 pipe = None
 initialization_lock = threading.Lock()
 initialized = False
+
+
+async def generate_video_async(id, output, video_dir, fps, start_time):
+    await asyncio.to_thread(
+        export_to_video,
+        output,
+        f"{video_dir}/{id}.mp4",
+        fps=fps
+    )
+    latency = time.time() - start_time
+    logger.info(f"Video generation completed in {latency:.2f} seconds.")
 
 
 def initialize(
@@ -70,6 +82,7 @@ class OpeaText2Video(OpeaComponent):
         token: str = None,
         bf16: bool = True,
         use_hpu_graphs: bool = False,
+        video_dir: str = "/home/user/video",
     ):
         """
         Initializes the OpeaText2Video component.
@@ -95,6 +108,7 @@ class OpeaText2Video(OpeaComponent):
         )
         self.pipe = pipe
         self.seed = seed
+        self.video_dir = video_dir
         self.generator = torch.manual_seed(self.seed)
 
         if not self.check_health():
@@ -135,13 +149,11 @@ class OpeaText2Video(OpeaComponent):
         ).frames[0]
 
         created = time.time()
-        id = f"video_{created}"
-        export_to_video(output, f"{id}.mp4", fps=fps)
-
-        latency = time.time() - start_time
-        logger.info(f"Video generation completed in {latency:.2f} seconds.")
-
-        return Text2VideoOutput(id=id, model="Wan-AI/Wan2.2-TI2V-5B-Diffusers", status="queued", progress=0, created_at=int(created), seconds=str(input.seconds), size=input.size, quality="standard")
+        quality = "standard"
+        id = f"video_{input.size}_{input.seconds}_{quality}_{int(created)}"
+        asyncio.create_task(generate_video_async(id, output, self.video_dir, fps, start_time))
+        # export_to_video(output, f"{self.video_dir}/{id}.mp4", fps=fps)
+        return Text2VideoOutput(id=id, model="Wan-AI/Wan2.2-TI2V-5B-Diffusers", status="queued", progress=0, created_at=int(created), seconds=str(input.seconds), size=input.size, quality=quality)
 
     def check_health(self) -> bool:
         """

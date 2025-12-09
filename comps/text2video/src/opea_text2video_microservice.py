@@ -116,7 +116,14 @@ async def get_video(video_id: str):
                         size=job[6],
                         quality=job[7],
                     )
-    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
+
+    content = {
+        "error": {
+            "message": f"Video with id {video_id} not found.",
+            "code": "404"
+        }
+    }
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
 
 
 @register_microservice(
@@ -133,7 +140,13 @@ async def get_video_content(video_id: str):
     if os.path.exists(video_file):
         return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
     else:
-        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
+        content = {
+            "error": {
+                "message": f"Video with id {video_id} not found.",
+                "code": "404"
+            }
+        }
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
 
 
 def main():

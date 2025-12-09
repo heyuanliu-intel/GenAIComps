@@ -98,37 +98,25 @@ async def text2video(input_data: Text2VideoInput) -> Text2VideoOutput:
     methods=["GET"],
 )
 @register_statistics(names=["opea_service@text2video"])
-async def get_video(video_id: str) -> Text2VideoOutput:
-    if component_loader:
-        video_infos = video_id.split("_")
-        if len(video_infos) != 5:
-            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
-
-        video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
-        if os.path.exists(video_file):
-            return Text2VideoOutput(
-                id=video_id,
-                model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-                status="succeeded",
-                progress=100,
-                size=video_infos[1],
-                seconds=video_infos[2],
-                quality=video_infos[3],
-                created_at=int(video_infos[4]),
-            )
-        else:
-            return Text2VideoOutput(
-                id=video_id,
-                model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-                status="processing",
-                progress=0,
-                size=video_infos[1],
-                seconds=video_infos[2],
-                quality=video_infos[3],
-                created_at=int(video_infos[4]),
-            )
-    else:
-        raise RuntimeError("Component loader is not initialized.")
+async def get_video(video_id: str):
+    job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
+    if os.path.exists(job_file):
+        with open(job_file, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                job = line.strip().split(",")
+                if job[0] == video_id:
+                    return Text2VideoOutput(
+                        id=job[0],
+                        model=os.getenv("MODEL"),
+                        status=job[1],
+                        progress=100 if job[1] == "completed" else 0,
+                        created_at=int(job[2]),
+                        seconds=job[5],
+                        size=job[6],
+                        quality=job[7],
+                    )
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
 
 
 @register_microservice(
@@ -141,14 +129,11 @@ async def get_video(video_id: str) -> Text2VideoOutput:
 )
 @register_statistics(names=["opea_service@text2video"])
 async def get_video_content(video_id: str):
-    if component_loader:
-        video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
-        if os.path.exists(video_file):
-            return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
-        else:
-            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
+    video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
+    if os.path.exists(video_file):
+        return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
     else:
-        raise RuntimeError("Component loader is not initialized.")
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": f"Video with id {video_id} not found."})
 
 
 def main():

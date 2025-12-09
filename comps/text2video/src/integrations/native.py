@@ -5,7 +5,6 @@ import os
 import time
 import torch
 import threading
-import asyncio
 
 from diffusers.utils import export_to_video
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
@@ -17,17 +16,6 @@ logger = CustomLogger("opea_Text2Video")
 pipe = None
 initialization_lock = threading.Lock()
 initialized = False
-
-
-async def generate_video_async(id, output, video_dir, fps, start_time):
-    await asyncio.to_thread(
-        export_to_video,
-        output,
-        f"{video_dir}/{id}.mp4",
-        fps=fps
-    )
-    latency = time.time() - start_time
-    logger.info(f"Video generation completed in {latency:.2f} seconds.")
 
 
 def initialize(
@@ -44,7 +32,7 @@ def initialize(
             return
 
         model_name = os.getenv("MODEL", model_name_or_path)
-        hf_token = os.getenv("HF_TOKEN", token)
+        # hf_token = os.getenv("HF_TOKEN", token)
         kwargs = {}
         if bf16:
             kwargs["torch_dtype"] = torch.bfloat16
@@ -110,6 +98,7 @@ class OpeaText2Video(OpeaComponent):
         self.seed = seed
         self.video_dir = video_dir
         self.generator = torch.manual_seed(self.seed)
+        self.negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
 
         if not self.check_health():
             logger.error("OpeaText2Video health check failed upon initialization.")
@@ -124,36 +113,18 @@ class OpeaText2Video(OpeaComponent):
         Returns:
             Text2VideoOutput: The generated video as a base64 encoded GIF string.
         """
-        start_time = time.time()
-
-        # Extract parameters from input and config
-        prompt = input.prompt
-        width, height = input.size.split("x")
-        guidance_scale = self.config.get("guidance_scale", 5.0)
-        num_inference_steps = self.config.get("num_inference_steps", 25)
-        fps = 16
-        num_frames = input.seconds * fps
-
-        logger.info(f"Generating video for prompt: '{prompt}'")
-        negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
-
-        output = self.pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            generator=self.generator,
-            width=int(width),
-            height=int(height),
-            guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps,
-            num_frames=num_frames,
-        ).frames[0]
-
+        job_file = os.path.join(self.video_dir, "job.txt")
         created = time.time()
+        id = f"video_{int(created)}"
+        status = "queued"
         quality = "standard"
-        id = f"video_{input.size}_{input.seconds}_{quality}_{int(created)}"
-        asyncio.create_task(generate_video_async(id, output, self.video_dir, fps, start_time))
-        # export_to_video(output, f"{self.video_dir}/{id}.mp4", fps=fps)
-        return Text2VideoOutput(id=id, model="Wan-AI/Wan2.2-TI2V-5B-Diffusers", status="queued", progress=0, created_at=int(created), seconds=str(input.seconds), size=input.size, quality=quality)
+        job = [id, status, int(created), input.prompt, input.input_reference, input.seconds, input.size, quality]
+        with open(job_file, "w") as f:
+            f.write(",".join(job))
+            f.write("\n")
+
+        logger.info(f"Job {id} queued with prompt: {input.prompt}")
+        return Text2VideoOutput(id=id, model=os.getenv("MODEL"), status=status, progress=0, created_at=int(created), seconds=str(input.seconds), size=input.size, quality=quality)
 
     def check_health(self) -> bool:
         """

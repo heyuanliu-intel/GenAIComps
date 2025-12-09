@@ -155,12 +155,8 @@ def main():
 
     args = parser.parse_args()
 
-    if os.getenv("MODEL") is None:
-        os.environ["MODEL"] = args.model_name_or_path
-
-    if os.getenv("VIDEO_DIR") is None:
-        os.environ["VIDEO_DIR"] = args.video_dir
-
+    os.environ["MODEL"] = args.model_name_or_path
+    os.environ["VIDEO_DIR"] = args.video_dir
     text2video_component_name = os.getenv("TEXT2VIDEO_COMPONENT_NAME", "OPEA_TEXT2VIDEO")
 
     try:

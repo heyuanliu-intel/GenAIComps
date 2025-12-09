@@ -101,10 +101,11 @@ async def text2video(input_data: Text2VideoInput) -> Text2VideoOutput:
 async def get_video(video_id: str):
     job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
     if os.path.exists(job_file):
+        sep = os.getenv("SEP")
         with open(job_file, "r") as f:
             lines = f.readlines()
             for line in lines:
-                job = line.strip().split(",")
+                job = line.strip().split(sep)
                 if job[0] == video_id:
                     return Text2VideoOutput(
                         id=job[0],
@@ -170,6 +171,7 @@ def main():
 
     os.environ["MODEL"] = args.model_name_or_path
     os.environ["VIDEO_DIR"] = args.video_dir
+    os.environ["SEP"] = "$###$"
     text2video_component_name = os.getenv("TEXT2VIDEO_COMPONENT_NAME", "OPEA_TEXT2VIDEO")
 
     try:

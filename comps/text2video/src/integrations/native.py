@@ -103,28 +103,53 @@ class OpeaText2Video(OpeaComponent):
         if not self.check_health():
             logger.error("OpeaText2Video health check failed upon initialization.")
 
-    async def invoke(self, input: Text2VideoInput) -> Text2VideoOutput:
+        # Ensure video directory exists
+        if not os.path.exists(self.video_dir):
+            os.makedirs(self.video_dir, exist_ok=True)
+        # Start background worker thread to process queued jobs
+        self._stop_event = threading.Event()
+        self._worker_thread = threading.Thread(target=self._job_worker, name="text2video-job-worker", daemon=True)
+        self._worker_thread.start()
+
+    def invoke(self, input: Text2VideoInput) -> Text2VideoOutput:
         """
         Generates a video based on the provided text prompt.
 
         Args:
             input (Text2VideoInput): The input data containing the prompt and other parameters.
-
-        Returns:
-            Text2VideoOutput: The generated video as a base64 encoded GIF string.
         """
         job_file = os.path.join(self.video_dir, "job.txt")
         created = time.time()
-        id = f"video_{int(created)}"
+        job_id = f"video_{int(created)}"
         status = "queued"
         quality = "standard"
-        job = [id, status, int(created), input.prompt, input.input_reference, input.seconds, input.size, quality]
-        with open(job_file, "w") as f:
-            f.write(",".join(job))
+        job = [
+            job_id,
+            status,
+            int(created),
+            input.prompt,
+            input.input_reference,
+            input.seconds,
+            input.size,
+            quality,
+        ]
+
+        # Append the new job to the job file
+        with open(job_file, "a") as f:
+            f.write(",".join(map(str, job)))
             f.write("\n")
 
-        logger.info(f"Job {id} queued with prompt: {input.prompt}")
-        return Text2VideoOutput(id=id, model=os.getenv("MODEL"), status=status, progress=0, created_at=int(created), seconds=str(input.seconds), size=input.size, quality=quality)
+        logger.info(f"Job {job_id} queued with prompt: {input.prompt}")
+        return Text2VideoOutput(
+            id=job_id,
+            model=os.getenv("MODEL"),
+            status=status,
+            progress=0,
+            created_at=int(created),
+            seconds=str(input.seconds),
+            size=input.size,
+            quality=quality,
+        )
 
     def check_health(self) -> bool:
         """
@@ -137,3 +162,69 @@ class OpeaText2Video(OpeaComponent):
             logger.error("Health check failed: Model pipeline is not initialized.")
             return False
         return True
+
+    def _job_worker(self):
+        """Background worker to poll job.txt and process queued jobs."""
+        job_file = os.path.join(self.video_dir, "job.txt")
+        fps_env = os.getenv("VIDEO_FPS")
+        try:
+            fps = int(fps_env) if fps_env else 16
+        except ValueError:
+            fps = 16
+
+        while not getattr(self, "_stop_event", threading.Event()).is_set():
+            try:
+                if not os.path.exists(job_file):
+                    time.sleep(1.0)
+                    continue
+
+                # Read all jobs
+                with open(job_file, "r") as f:
+                    lines = [line.strip() for line in f if line.strip()]
+
+                updated_lines = []
+                for line in lines:
+                    parts = line.split(",")
+                    if len(parts) < 8:
+                        # Malformed line, keep as is
+                        updated_lines.append(line)
+                        continue
+
+                    id, status, created_str, prompt, input_reference, seconds_str, size, quality = parts[:8]
+
+                    if status == "queued":
+                        guidance_scale = self.config.get("guidance_scale", 5.0)
+                        num_inference_steps = self.config.get("num_inference_steps", 25)
+                        num_frames = int(seconds_str) * fps
+                        width, height = size.split("x")
+                        output = self.pipe(
+                            prompt=prompt,
+                            negative_prompt=self.negative_prompt,
+                            generator=self.generator,
+                            width=int(width),
+                            height=int(height),
+                            guidance_scale=guidance_scale,
+                            num_inference_steps=num_inference_steps,
+                            num_frames=num_frames,
+                        ).frames[0]
+                        export_to_video(output, os.path.join(self.video_dir, f"{id}.mp4"), fps=fps)
+                        logger.info(f"Exported video for job {id} to {self.video_dir}/{id}.mp4")
+
+                        # Update job status to completed
+                        status = "completed"
+                        updated_job = [id, status, created_str, prompt, input_reference, seconds_str, size, quality]
+                        updated_lines.append(",".join(map(str, updated_job)))
+                    else:
+                        updated_lines.append(line)
+
+                # Persist updated job list only if any queued processed
+                if updated_lines != lines:
+                    with open(job_file, "w") as f:
+                        for l in updated_lines:
+                            f.write(f"{l}\n")
+
+            except Exception as e:
+                logger.error(f"Job worker encountered an error: {e}")
+
+            # Poll interval
+            time.sleep(1.0)

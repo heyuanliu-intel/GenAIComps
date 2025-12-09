@@ -51,6 +51,7 @@ def initialize(
                 gaudi_config="Habana/stable-diffusion",
                 **kwargs,
             )
+            logger.info(f"GaudiWanPipeline with {model_name} loaded.")
 
             pipe_image = GaudiWanImageToVideoPipeline.from_pretrained(
                 model_name,
@@ -59,8 +60,11 @@ def initialize(
                 gaudi_config="Habana/stable-diffusion",
                 **kwargs,
             )
-            image_processor = ModularPipeline.from_pretrained("YiYiXu/WanImageProcessor", trust_remote_code=True)
-            logger.info("GaudiWanPipeline loaded.")
+            logger.info(f"GaudiWanImageToVideoPipeline with {model_name} loaded.")
+
+            image_processor_model = os.getenv("IMAGE_PROCESSOR")
+            image_processor = ModularPipeline.from_pretrained(image_processor_model, trust_remote_code=True)
+            logger.info(f"ModularPipeline with {image_processor_model} loaded.")
         else:
             raise NotImplementedError(f"Device '{device}' is not supported. Only 'hpu' are supported.")
 
@@ -108,6 +112,8 @@ class OpeaText2Video(OpeaComponent):
             use_hpu_graphs=use_hpu_graphs,
         )
         self.pipe = pipe
+        self.pipe_image = pipe_image
+        self.image_processor = image_processor
         self.seed = seed
         self.video_dir = video_dir
         self.generator = torch.manual_seed(self.seed)
@@ -193,11 +199,13 @@ class OpeaText2Video(OpeaComponent):
         width, height = size.split("x")
 
         if input_reference != "N/A":
-            image = image_processor(
+            logger.info(f"Processing input reference image for image {input_reference}.")
+            image = self.image_processor(
                 image=input_reference,
+                max_area=int(height)*int(width),
                 output="processed_image"
             )
-            output = pipe_image(
+            output = self.pipe_image(
                 image=image,
                 prompt=prompt,
                 negative_prompt=self.negative_prompt,

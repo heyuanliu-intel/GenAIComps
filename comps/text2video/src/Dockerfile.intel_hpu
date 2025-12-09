@@ -10,6 +10,7 @@ RUN useradd -m -s /bin/bash user && \
 
 COPY comps /home/user/comps
 
+RUN cd /home/user && git clone https://github.com/heyuanliu-intel/WanImageProcessor.git
 RUN chown -R user /home/user/comps/text2video
 
 RUN rm -rf /etc/ssh/ssh_host*

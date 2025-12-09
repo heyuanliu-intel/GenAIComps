@@ -13,3 +13,4 @@ shortuuid
 torch
 transformers
 uvicorn
+python-multipart

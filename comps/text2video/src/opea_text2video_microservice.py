@@ -5,7 +5,7 @@ import argparse
 import os
 import time
 
-from fastapi import status
+from fastapi import Depends, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 
 from comps import (
@@ -25,6 +25,19 @@ from comps.text2video.src.integrations.native import OpeaText2Video
 logger = CustomLogger("text2video")
 component_loader = None
 LOGFLAG = os.getenv("LOGFLAG", "False").lower() in ("true", "1", "t")
+
+
+async def resolve_request(request: Request):
+    form = await request.form()
+    common_args = {
+        "prompt": form.get("prompt", None),
+        "input_reference": form.get("input_reference", None),
+        "model": form.get("model", None),
+        "seconds": int(form.get("seconds", 4)),
+        "size": form.get("size", "720x1280"),
+    }
+
+    return Text2VideoInput(**common_args)
 
 
 @register_microservice(
@@ -69,7 +82,7 @@ async def models():
     output_datatype=Text2VideoOutput,
 )
 @register_statistics(names=["opea_service@text2video"])
-async def text2video(input_data: Text2VideoInput) -> Text2VideoOutput:
+async def text2video(input_data: Text2VideoInput = Depends(resolve_request)) -> Text2VideoOutput:
     """
     Process a text-to-video generation request.
 
@@ -186,11 +199,13 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed for generation.")
     parser.add_argument("--bf16", action="store_true", help="Use bfloat16 precision.")
     parser.add_argument("--video_dir", type=str, default="/home/user/video", help="Video output directory.")
+    parser.add_argument("--image_processor", type=str, default="/home/user/WanImageProcessor", help="Video output directory.")
 
     args = parser.parse_args()
 
     os.environ["MODEL"] = args.model_name_or_path
     os.environ["VIDEO_DIR"] = args.video_dir
+    os.environ["IMAGE_PROCESSOR"] = args.image_processor
     os.environ["SEP"] = "$###$"
     text2video_component_name = os.getenv("TEXT2VIDEO_COMPONENT_NAME", "OPEA_TEXT2VIDEO")
 

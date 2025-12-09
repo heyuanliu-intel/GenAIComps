@@ -1076,12 +1076,20 @@ class ArbPostHearingAssistantChatCompletionRequest(ChatCompletionRequest):
     type: Optional[str] = None
 
 
-class Text2VideoInput(BaseModel):
-    prompt: str
-    input_reference: UploadFile = File(...)
-    model: Optional[str] = None
-    seconds: Optional[int] = 4
-    size: Optional[str] = "720x1280"
+class Text2VideoInput:
+    def __init__(
+        self,
+        prompt: str = Form(...),
+        input_reference: Optional[UploadFile] = File(None),
+        model: Optional[str] = Form(None),
+        seconds: Optional[int] = Form(4),
+        size: Optional[str] = Form("720x1280")
+    ):
+        self.prompt = prompt
+        self.input_reference = input_reference
+        self.model = model
+        self.seconds = seconds
+        self.size = size
 
 
 class Text2VideoOutput(BaseModel):

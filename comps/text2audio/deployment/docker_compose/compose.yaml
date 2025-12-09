@@ -1,0 +1,20 @@
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+version: '3.8'
+
+services:
+  text2audio:
+    build:
+      context: ../../src
+      dockerfile: Dockerfile
+    image: opea/text2audio:latest
+    container_name: opea-text2audio
+    environment:
+      - TEXT2AUDIO_COMPONENT_NAME=OPEA_TEXT2AUDIO
+    ports:
+      - "9380:9380"
+    restart: unless-stopped
+    volumes:
+      - ./models:/app/models
+    command: python opea_text2audio_microservice.py --model_name_or_path iic/CosyVoice2-0.5B --device cpu

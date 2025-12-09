@@ -1,0 +1,10 @@
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+# Core dependencies with CUDA support
+torch==2.1.0+cu121
+transformers
+torchaudio
+
+# OPEA dependencies
+comps

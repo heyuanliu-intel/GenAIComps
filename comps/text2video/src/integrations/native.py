@@ -6,6 +6,7 @@ import time
 import torch
 import threading
 
+from diffusers import ModularPipeline
 from diffusers.utils import export_to_video
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
@@ -14,6 +15,8 @@ logger = CustomLogger("opea_Text2Video")
 
 # Global variables for the model pipeline and initialization state
 pipe = None
+pipe_image = None
+image_processor = None
 initialization_lock = threading.Lock()
 initialized = False
 
@@ -26,7 +29,7 @@ def initialize(
     use_hpu_graphs: bool = False,
 ):
     """Initialize the model pipeline in a thread-safe manner."""
-    global pipe, initialized
+    global pipe, pipe_image, image_processor, initialized
     with initialization_lock:
         if initialized:
             return
@@ -39,6 +42,7 @@ def initialize(
 
         if device == "hpu":
             from optimum.habana.diffusers import GaudiWanPipeline
+            from optimum.habana.diffusers import GaudiWanImageToVideoPipeline
 
             pipe = GaudiWanPipeline.from_pretrained(
                 model_name,
@@ -47,6 +51,15 @@ def initialize(
                 gaudi_config="Habana/stable-diffusion",
                 **kwargs,
             )
+
+            pipe_image = GaudiWanImageToVideoPipeline.from_pretrained(
+                model_name,
+                use_habana=True,
+                use_hpu_graphs=use_hpu_graphs,
+                gaudi_config="Habana/stable-diffusion",
+                **kwargs,
+            )
+            image_processor = ModularPipeline.from_pretrained("YiYiXu/WanImageProcessor", trust_remote_code=True)
             logger.info("GaudiWanPipeline loaded.")
         else:
             raise NotImplementedError(f"Device '{device}' is not supported. Only 'hpu' are supported.")
@@ -128,13 +141,21 @@ class OpeaText2Video(OpeaComponent):
             status,
             int(created),
             input.prompt,
-            input.input_reference,
             input.seconds,
             input.size,
             quality,
         ]
 
-        # Append the new job to the job file
+        if input.input_reference:
+            image_file = os.path.join(self.video_dir, f"{job_id}_input_reference")
+            contents = await input.input_reference.read()
+            with open(image_file, "wb") as img_f:
+                img_f.write(contents)
+            job.append(image_file)
+        else:
+            job.append("N/A")
+
+            # Append the new job to the job file
         with open(job_file, "a") as f:
             f.write(os.getenv("SEP").join(map(str, job)))
             f.write("\n")
@@ -163,23 +184,41 @@ class OpeaText2Video(OpeaComponent):
             return False
         return True
 
-    def export_to_video(self, id, prompt, seconds, size):
+    def export_to_video(self, id, prompt, seconds, size, input_reference):
         """Exports a sequence of frames to a video file."""
         guidance_scale = self.config.get("guidance_scale", 5.0)
         num_inference_steps = self.config.get("num_inference_steps", 25)
         fps = int(self.config.get("fps", 16))
         num_frames = int(seconds) * fps
         width, height = size.split("x")
-        output = self.pipe(
-            prompt=prompt,
-            negative_prompt=self.negative_prompt,
-            generator=self.generator,
-            width=int(width),
-            height=int(height),
-            guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps,
-            num_frames=num_frames,
-        ).frames[0]
+
+        if input_reference != "N/A":
+            image = image_processor(
+                image=input_reference,
+                output="processed_image"
+            )
+            output = pipe_image(
+                image=image,
+                prompt=prompt,
+                negative_prompt=self.negative_prompt,
+                width=int(width),
+                height=int(height),
+                num_frames=num_frames,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+            ).frames[0]
+        else:
+            output = self.pipe(
+                prompt=prompt,
+                negative_prompt=self.negative_prompt,
+                generator=self.generator,
+                width=int(width),
+                height=int(height),
+                guidance_scale=guidance_scale,
+                num_inference_steps=num_inference_steps,
+                num_frames=num_frames,
+            ).frames[0]
+
         export_to_video(output, os.path.join(self.video_dir, f"{id}.mp4"), fps=fps)
         logger.info(f"Exported video for job {id} to {self.video_dir}/{id}.mp4")
 
@@ -205,11 +244,11 @@ class OpeaText2Video(OpeaComponent):
                         updated_lines.append(line)
                         continue
 
-                    id, status, created_str, prompt, input_reference, seconds, size, quality = parts[:8]
+                    id, status, created_str, prompt, seconds, size, quality, input_reference = parts[:8]
                     if status == "queued":
-                        self.export_to_video(id, prompt, seconds, size)
+                        self.export_to_video(id, prompt, seconds, size, input_reference)
                         status = "completed"
-                        updated_job = [id, status, created_str, prompt, input_reference, seconds, size, quality]
+                        updated_job = [id, status, created_str, prompt, seconds, size, quality, input_reference]
                         updated_lines.append(sep.join(map(str, updated_job)))
                     else:
                         updated_lines.append(line)

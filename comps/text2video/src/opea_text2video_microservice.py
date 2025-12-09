@@ -113,9 +113,9 @@ async def get_video(video_id: str):
                         status=job[1],
                         progress=100 if job[1] == "completed" else 0,
                         created_at=int(job[2]),
-                        seconds=job[5],
-                        size=job[6],
-                        quality=job[7],
+                        seconds=job[4],
+                        size=job[5],
+                        quality=job[6],
                     )
 
     content = {
@@ -152,9 +152,10 @@ async def get_video_content(video_id: str):
                             status=job[1],
                             progress=0,
                             created_at=int(job[2]),
-                            seconds=job[5],
-                            size=job[6],
-                            quality=job[7])
+                            seconds=job[4],
+                            size=job[5],
+                            quality=job[6],
+                        )
                     else:
                         video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
                         if os.path.exists(video_file):

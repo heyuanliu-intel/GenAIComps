@@ -1078,7 +1078,7 @@ class ArbPostHearingAssistantChatCompletionRequest(ChatCompletionRequest):
 
 class Text2VideoInput(BaseModel):
     prompt: str
-    input_reference: Optional[str] = None
+    input_reference: UploadFile = File(...)
     model: Optional[str] = None
     seconds: Optional[int] = 4
     size: Optional[str] = "720x1280"

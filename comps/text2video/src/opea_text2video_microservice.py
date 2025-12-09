@@ -137,17 +137,36 @@ async def get_video(video_id: str):
 )
 @register_statistics(names=["opea_service@text2video"])
 async def get_video_content(video_id: str):
-    video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
-    if os.path.exists(video_file):
-        return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
-    else:
-        content = {
-            "error": {
-                "message": f"Video with id {video_id} not found.",
-                "code": "404"
-            }
+    job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
+    if os.path.exists(job_file):
+        sep = os.getenv("SEP")
+        with open(job_file, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                job = line.strip().split(sep)
+                if job[0] == video_id:
+                    if job[1] != "completed":
+                        return Text2VideoOutput(
+                            id=job[0],
+                            model=os.getenv("MODEL"),
+                            status=job[1],
+                            progress=0,
+                            created_at=int(job[2]),
+                            seconds=job[5],
+                            size=job[6],
+                            quality=job[7])
+                    else:
+                        video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
+                        if os.path.exists(video_file):
+                            return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
+
+    content = {
+        "error": {
+            "message": f"Video with id {video_id} not found.",
+            "code": "404"
         }
-        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
+    }
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
 
 
 def main():

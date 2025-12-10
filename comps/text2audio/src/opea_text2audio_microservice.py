@@ -28,7 +28,6 @@ logger = CustomLogger("opea_text2audio_microservice")
     port=9380,
     input_datatype=AudioSpeechRequest,
     output_datatype=bytes,
-    response_content_type="audio/mpeg",
 )
 @register_statistics(names=["opea_service@text2audio"])
 async def text2audio(input: AudioSpeechRequest):

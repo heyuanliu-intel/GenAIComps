@@ -7,6 +7,7 @@ import threading
 import torch
 import torchaudio
 
+from fastapi.responses import FileResponse
 from cosyvoice.utils.file_utils import load_wav
 from comps.cores.proto.api_protocol import AudioSpeechRequest
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry
@@ -74,14 +75,11 @@ class OpeaText2audio(OpeaComponent):
         self.cosyvoice = cosyvoice
         logger.info("CosyVoice2 model initialized.")
 
-    async def invoke(self, input: AudioSpeechRequest) -> bytes:
+    async def invoke(self, input: AudioSpeechRequest):
         """Invokes the text2audio service to generate audio for the provided input.
 
         Args:
             input (AudioSpeechRequest): The input for text2audio service, including text, model, voice, etc.
-
-        Returns:
-            bytes: The generated audio bytes.
         """
         text = input.input
         voice = input.voice or "default"
@@ -101,11 +99,8 @@ class OpeaText2audio(OpeaComponent):
             wav = torch.cat([i["tts_speech"] for i in output])
             torchaudio.save(output_path, wav, self.cosyvoice.sample_rate)
 
-        with open(output_path, "rb") as f:
-            audio_bytes = f.read()
-
         # os.remove(output_path)
-        return audio_bytes
+        return FileResponse(output_path, media_type="audio/wav", filename=f"audio_{int(created)}.wav")
 
     def check_health(self) -> bool:
         return True

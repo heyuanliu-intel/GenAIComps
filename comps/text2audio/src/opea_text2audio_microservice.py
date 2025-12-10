@@ -8,14 +8,13 @@ import time
 from comps import (
     CustomLogger,
     OpeaComponentLoader,
-    AudioSpeechRequest,
-    AudioTranscriptionResponse,
     ServiceType,
     opea_microservices,
     register_microservice,
     register_statistics,
     statistics_dict,
 )
+from comps.cores.proto.api_protocol import AudioSpeechRequest
 from comps.text2audio.src.integrations.native import OpeaText2audio
 
 logger = CustomLogger("opea_text2audio_microservice")
@@ -47,9 +46,14 @@ async def text2audio(input: AudioSpeechRequest):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path", type=str, default="iic/CosyVoice2-0.5B")
-    parser.add_argument("--device", type=str, default="cpu")
-    
+    parser.add_argument("--device", type=str, default="hpu")
+    parser.add_argument("--root_dir", type=str, default="/home/user/CosyVoice")
+    parser.add_argument("--audio_dir", type=str, default="/home/user/audio", help="Audio output directory.")
+
     args = parser.parse_args()
+    os.environ["MODEL"] = args.model_name_or_path
+    os.environ["ROOT_DIR"] = args.root_dir
+    os.environ["AUDIO_DIR"] = args.audio_dir
 
     text2audio_component_name = os.getenv("TEXT2AUDIO_COMPONENT_NAME", "OPEA_TEXT2AUDIO")
     # Initialize OpeaComponentLoader

@@ -1076,6 +1076,17 @@ class ArbPostHearingAssistantChatCompletionRequest(ChatCompletionRequest):
     type: Optional[str] = None
 
 
+class AudioSpeechRequest(BaseModel):
+    # Ordered by official OpenAI API documentation
+    # default values are same with
+    # https://platform.openai.com/docs/api-reference/audio/createSpeech
+    input: str
+    model: Optional[str] = "iic/CosyVoice2-0.5B"
+    voice: Optional[str] = "default"
+    response_format: Optional[str] = "wav"
+    speed: Optional[NonNegativeFloat] = 1.0
+
+
 class Text2VideoInput:
     def __init__(
         self,

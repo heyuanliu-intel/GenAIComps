@@ -1104,6 +1104,8 @@ class Text2VideoInput:
         prompt: str = Form(None),
         input_reference: Optional[UploadFile] = File(None),
         audio: Optional[UploadFile] = File(None),
+        audio_guide_scale: Optional[float] = Form(5.0),
+        audio_type: Optional[str] = Form("add"),
         model: Optional[str] = Form(None),
         seconds: Optional[int] = Form(4),
         fps: Optional[int] = Form(24),
@@ -1116,6 +1118,8 @@ class Text2VideoInput:
         self.prompt = prompt
         self.input_reference = input_reference
         self.audio = audio
+        self.audio_guide_scale = audio_guide_scale
+        self.audio_type = audio_type
         self.model = model
         self.seconds = seconds
         self.fps = fps

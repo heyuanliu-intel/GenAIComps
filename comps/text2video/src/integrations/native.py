@@ -3,56 +3,10 @@
 
 import os
 import time
-import torch
-import threading
-
-from diffusers.utils import export_to_video
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
 
 logger = CustomLogger("opea_Text2Video")
-
-# Global variables for the model pipeline and initialization state
-pipe = None
-initialization_lock = threading.Lock()
-initialized = False
-
-
-def initialize(
-    model_name_or_path: str = "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-    device: str = "hpu",
-    token: str = None,
-    bf16: bool = True,
-    use_hpu_graphs: bool = False,
-):
-    """Initialize the model pipeline in a thread-safe manner."""
-    global pipe, pipe_image, image_processor, initialized
-    with initialization_lock:
-        if initialized:
-            return
-
-        model_name = os.getenv("MODEL", model_name_or_path)
-        # hf_token = os.getenv("HF_TOKEN", token)
-        kwargs = {}
-        if bf16:
-            kwargs["torch_dtype"] = torch.bfloat16
-
-        if device == "hpu":
-            from optimum.habana.diffusers import GaudiWanPipeline
-
-            pipe = GaudiWanPipeline.from_pretrained(
-                model_name,
-                use_habana=True,
-                use_hpu_graphs=use_hpu_graphs,
-                gaudi_config="Habana/stable-diffusion",
-                **kwargs,
-            )
-            logger.info(f"GaudiWanPipeline with {model_name} loaded.")
-        else:
-            raise NotImplementedError(f"Device '{device}' is not supported. Only 'hpu' are supported.")
-
-        logger.info(f"Model '{model_name}' initialized on device '{device}'.")
-        initialized = True
 
 
 @OpeaComponentRegistry.register("OPEA_TEXT2VIDEO")
@@ -64,13 +18,7 @@ class OpeaText2Video(OpeaComponent):
         name: str,
         description: str,
         config: dict = None,
-        seed: int = 42,
-        model_name_or_path: str = "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-        device: str = "hpu",
-        token: str = None,
-        bf16: bool = True,
-        use_hpu_graphs: bool = False,
-        video_dir: str = "/home/user/video",
+        video_dir: str = "/home/user/video"
     ):
         """
         Initializes the OpeaText2Video component.
@@ -79,38 +27,12 @@ class OpeaText2Video(OpeaComponent):
             name (str): The name of the component.
             description (str): A description of the component.
             config (dict, optional): Configuration dictionary. Defaults to None.
-            seed (int, optional): Random seed for generation. Defaults to 42.
-            model_name_or_path (str, optional): The model identifier. Defaults to "Wan-AI/Wan2.2-TI2V-5B-Diffusers".
-            device (str, optional): The device to run the model on. Defaults to "hpu".
-            token (str, optional): Hugging Face authentication token. Defaults to None.
-            bf16 (bool, optional): Whether to use bfloat16 precision. Defaults to True.
-            use_hpu_graphs (bool, optional): Whether to use HPU graphs for optimization. Defaults to False.
         """
         super().__init__(name, ServiceType.TEXT2VIDEO.name.lower(), description, config)
-        initialize(
-            model_name_or_path=model_name_or_path,
-            device=device,
-            token=token,
-            bf16=bf16,
-            use_hpu_graphs=use_hpu_graphs,
-        )
-        self.pipe = pipe
-        self.image_processor = image_processor
-        self.seed = seed
         self.video_dir = video_dir
-        self.generator = torch.manual_seed(self.seed)
-        self.negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
-
+        os.makedirs(self.video_dir, exist_ok=True)
         if not self.check_health():
             logger.error("OpeaText2Video health check failed upon initialization.")
-
-        # Ensure video directory exists
-        if not os.path.exists(self.video_dir):
-            os.makedirs(self.video_dir, exist_ok=True)
-        # Start background worker thread to process queued jobs
-        self._stop_event = threading.Event()
-        self._worker_thread = threading.Thread(target=self._job_worker, name="text2video-job-worker", daemon=True)
-        self._worker_thread.start()
 
     async def invoke(self, input: Text2VideoInput) -> Text2VideoOutput:
         """
@@ -136,6 +58,8 @@ class OpeaText2Video(OpeaComponent):
             input.shift,
             input.steps,
             input.guide_scale,
+            input.audio_guide_scale,
+            input.audio_type,
             input.seed
         ]
 
@@ -181,70 +105,4 @@ class OpeaText2Video(OpeaComponent):
         Returns:
             bool: True if the pipeline is ready, False otherwise.
         """
-        if self.pipe is None:
-            logger.error("Health check failed: Model pipeline is not initialized.")
-            return False
         return True
-
-    def export_to_video(self, id, prompt, seconds, size, fps, shift, steps, guide_scale, seed, input_reference, audio):
-        """Exports a sequence of frames to a video file."""
-        fps = int(fps)
-        num_frames = int(seconds) * fps + 1
-        width, height = size.split("x")
-        generator = torch.manual_seed(int(seed))
-        output = self.pipe(
-            prompt=prompt,
-            negative_prompt=self.negative_prompt,
-            generator=generator,
-            width=int(width),
-            height=int(height),
-            guidance_scale=float(guide_scale),
-            num_inference_steps=int(steps),
-            num_frames=num_frames,
-        ).frames[0]
-
-        export_to_video(output, os.path.join(self.video_dir, f"{id}.mp4"), fps=fps)
-        logger.info(f"Exported video for job {id} to {self.video_dir}/{id}.mp4")
-
-    def _job_worker(self):
-        """Background worker to poll job.txt and process queued jobs."""
-        job_file = os.path.join(self.video_dir, "job.txt")
-        while not getattr(self, "_stop_event", threading.Event()).is_set():
-            try:
-                if not os.path.exists(job_file):
-                    time.sleep(1.0)
-                    continue
-
-                # Read all jobs
-                with open(job_file, "r") as f:
-                    lines = [line.strip() for line in f if line.strip()]
-
-                updated_lines = list(lines)  # Make a mutable copy
-                sep = os.getenv("SEP")
-                job_processed = False
-                for i, line in enumerate(lines):
-                    parts = line.split(sep)
-                    if len(parts) < 14:
-                        continue
-
-                    id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, seed, input_reference, audio = parts[:14]
-                    if status == "queued":
-                        # Process the first queued job found
-                        self.export_to_video(id, prompt, seconds, size, fps, shift, steps, guide_scale, seed, input_reference, audio)
-                        status = "completed"
-                        updated_job = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, seed, input_reference, audio]
-                        updated_lines[i] = sep.join(map(str, updated_job))
-                        job_processed = True
-                        break  # Exit after processing one job to rewrite the file
-
-                # If a job was processed, rewrite the entire job file
-                if job_processed:
-                    with open(job_file, "w") as f:
-                        for l in updated_lines:
-                            f.write(f"{l}\n")
-
-            except Exception as e:
-                logger.error(f"Job worker encountered an error: {e}")
-
-            # Poll interval
-            time.sleep(1.0)

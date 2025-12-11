@@ -33,13 +33,15 @@ async def resolve_request(request: Request):
         "prompt": form.get("prompt", None),
         "input_reference": form.get("input_reference", None),
         "audio": form.get("audio", None),
+        "audio_guide_scale": float(form.get("audio_guide_scale", 5.0)),
+        "audio_type": form.get("audio_type", "add"),
         "model": form.get("model", None),
         "seconds": int(form.get("seconds", 4)),
         "fps": int(form.get("fps", 24)),
         "shift": float(form.get("shift", 5.0)),
-        "steps": int(form.get("fps", 50)),
+        "steps": int(form.get("steps", 50)),
         "seed": int(form.get("seed", 42)),
-        "guide_scale": float(form.get("shift", 5.0)),
+        "guide_scale": float(form.get("guide_scale", 5.0)),
         "size": form.get("size", "720x1280"),
     }
 
@@ -196,22 +198,10 @@ def main():
     global component_loader
 
     parser = argparse.ArgumentParser(description="Text-to-Video Microservice")
-    parser.add_argument(
-        "--model_name_or_path", type=str, default="Wan-AI/Wan2.2-TI2V-5B-Diffusers", help="Model name or path."
-    )
-    parser.add_argument("--use_hpu_graphs", action="store_true", help="Enable HPU graphs.")
-    parser.add_argument("--device", type=str, default="cpu", help="Device to run the model on (e.g., 'cpu', 'hpu').")
-    parser.add_argument("--token", type=str, default=None, help="Hugging Face token for private models.")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for generation.")
-    parser.add_argument("--bf16", action="store_true", help="Use bfloat16 precision.")
     parser.add_argument("--video_dir", type=str, default="/home/user/video", help="Video output directory.")
-    parser.add_argument("--image_processor", type=str, default="/home/user/WanImageProcessor", help="Video output directory.")
 
     args = parser.parse_args()
-
-    os.environ["MODEL"] = args.model_name_or_path
     os.environ["VIDEO_DIR"] = args.video_dir
-    os.environ["IMAGE_PROCESSOR"] = args.image_processor
     os.environ["SEP"] = "$###$"
     text2video_component_name = os.getenv("TEXT2VIDEO_COMPONENT_NAME", "OPEA_TEXT2VIDEO")
 
@@ -220,12 +210,6 @@ def main():
             component_name=text2video_component_name,
             description=f"OPEA IMAGES_GENERATIONS Component: {text2video_component_name}",
             config=args.__dict__,
-            seed=args.seed,
-            model_name_or_path=args.model_name_or_path,
-            device=args.device,
-            token=args.token,
-            bf16=args.bf16,
-            use_hpu_graphs=args.use_hpu_graphs,
             video_dir=args.video_dir,
         )
     except Exception as e:

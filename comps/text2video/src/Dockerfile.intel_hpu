@@ -29,7 +29,4 @@ RUN pip install --no-cache-dir --upgrade pip setuptools uv && \
 USER user
 WORKDIR /home/user/comps/text2video/src
 
-RUN echo python3 opea_text2video_microservice.py --device hpu >> run.sh
-# RUN echo torchrun --nproc_per_node=4 --standalone opea_text2video_microservice.py --device hpu --use_hpu_graphs --bf16 >> run.sh
-
 CMD ["bash", "run.sh"]

@@ -28,4 +28,6 @@ RUN pip install --no-cache-dir --upgrade pip setuptools uv && \
 USER user
 WORKDIR /home/user/comps/text2video/src
 
-CMD nohup python3 open_text2video_microservice.py --model_name_or_path $MODEL > microservice.log 2>&1 && PT_HPU_LAZY_MODE=1 torchrun --nproc_per_node=$RANK text_to_video_generation.py --use_habana --dtype bf16 --device hpu --model_name_or_path $MODEL
+RUN echo 'nohup python3 open_text2video_microservice.py > microservice.log 2>&1 && PT_HPU_LAZY_MODE=1 torchrun --nproc_per_node=$RANK text_to_video_generation.py --use_habana --dtype bf16 --device hpu --model_name_or_path $MODEL' >> run.sh
+
+CMD ["bash", "run.sh"]

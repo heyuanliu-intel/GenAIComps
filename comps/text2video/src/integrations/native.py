@@ -6,7 +6,6 @@ import time
 import torch
 import threading
 
-from diffusers import ModularPipeline
 from diffusers.utils import export_to_video
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
@@ -15,8 +14,6 @@ logger = CustomLogger("opea_Text2Video")
 
 # Global variables for the model pipeline and initialization state
 pipe = None
-pipe_image = None
-image_processor = None
 initialization_lock = threading.Lock()
 initialized = False
 
@@ -42,7 +39,6 @@ def initialize(
 
         if device == "hpu":
             from optimum.habana.diffusers import GaudiWanPipeline
-            from optimum.habana.diffusers import GaudiWanImageToVideoPipeline
 
             pipe = GaudiWanPipeline.from_pretrained(
                 model_name,
@@ -52,19 +48,6 @@ def initialize(
                 **kwargs,
             )
             logger.info(f"GaudiWanPipeline with {model_name} loaded.")
-
-            pipe_image = GaudiWanImageToVideoPipeline.from_pretrained(
-                model_name,
-                use_habana=True,
-                use_hpu_graphs=use_hpu_graphs,
-                gaudi_config="Habana/stable-diffusion",
-                **kwargs,
-            )
-            logger.info(f"GaudiWanImageToVideoPipeline with {model_name} loaded.")
-
-            image_processor_model = os.getenv("IMAGE_PROCESSOR")
-            image_processor = ModularPipeline.from_pretrained(image_processor_model, trust_remote_code=True)
-            logger.info(f"ModularPipeline with {image_processor_model} loaded.")
         else:
             raise NotImplementedError(f"Device '{device}' is not supported. Only 'hpu' are supported.")
 
@@ -112,7 +95,6 @@ class OpeaText2Video(OpeaComponent):
             use_hpu_graphs=use_hpu_graphs,
         )
         self.pipe = pipe
-        self.pipe_image = pipe_image
         self.image_processor = image_processor
         self.seed = seed
         self.video_dir = video_dir
@@ -150,6 +132,11 @@ class OpeaText2Video(OpeaComponent):
             input.seconds,
             input.size,
             quality,
+            input.fps,
+            input.shift,
+            input.steps,
+            input.guide_scale,
+            input.seed
         ]
 
         if input.input_reference:
@@ -158,6 +145,15 @@ class OpeaText2Video(OpeaComponent):
             with open(image_file, "wb") as img_f:
                 img_f.write(contents)
             job.append(image_file)
+        else:
+            job.append("N/A")
+
+        if input.audio:
+            audio_file = os.path.join(self.video_dir, f"{job_id}_audio")
+            contents = await input.audio.read()
+            with open(audio_file, "wb") as audio_f:
+                audio_f.write(contents)
+            job.append(audio_file)
         else:
             job.append("N/A")
 
@@ -190,42 +186,22 @@ class OpeaText2Video(OpeaComponent):
             return False
         return True
 
-    def export_to_video(self, id, prompt, seconds, size, input_reference):
+    def export_to_video(self, id, prompt, seconds, size, fps, shift, steps, guide_scale, seed, input_reference, audio):
         """Exports a sequence of frames to a video file."""
-        guidance_scale = self.config.get("guidance_scale", 5.0)
-        num_inference_steps = self.config.get("num_inference_steps", 25)
-        fps = int(self.config.get("fps", 16))
-        num_frames = int(seconds) * fps
+        fps = int(fps)
+        num_frames = int(seconds) * fps + 1
         width, height = size.split("x")
-
-        if input_reference != "N/A":
-            logger.info(f"Processing input reference image for image {input_reference}.")
-            image = self.image_processor(
-                image=input_reference,
-                max_area=int(height)*int(width),
-                output="processed_image"
-            )
-            output = self.pipe_image(
-                image=image,
-                prompt=prompt,
-                negative_prompt=self.negative_prompt,
-                width=int(width),
-                height=int(height),
-                num_frames=num_frames,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-            ).frames[0]
-        else:
-            output = self.pipe(
-                prompt=prompt,
-                negative_prompt=self.negative_prompt,
-                generator=self.generator,
-                width=int(width),
-                height=int(height),
-                guidance_scale=guidance_scale,
-                num_inference_steps=num_inference_steps,
-                num_frames=num_frames,
-            ).frames[0]
+        generator = torch.manual_seed(int(seed))
+        output = self.pipe(
+            prompt=prompt,
+            negative_prompt=self.negative_prompt,
+            generator=generator,
+            width=int(width),
+            height=int(height),
+            guidance_scale=float(guide_scale),
+            num_inference_steps=int(steps),
+            num_frames=num_frames,
+        ).frames[0]
 
         export_to_video(output, os.path.join(self.video_dir, f"{id}.mp4"), fps=fps)
         logger.info(f"Exported video for job {id} to {self.video_dir}/{id}.mp4")
@@ -243,26 +219,26 @@ class OpeaText2Video(OpeaComponent):
                 with open(job_file, "r") as f:
                     lines = [line.strip() for line in f if line.strip()]
 
-                updated_lines = []
+                updated_lines = list(lines)  # Make a mutable copy
                 sep = os.getenv("SEP")
-                for line in lines:
+                job_processed = False
+                for i, line in enumerate(lines):
                     parts = line.split(sep)
-                    if len(parts) < 8:
-                        # Malformed line, keep as is
-                        updated_lines.append(line)
+                    if len(parts) < 14:
                         continue
 
-                    id, status, created_str, prompt, seconds, size, quality, input_reference = parts[:8]
+                    id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, seed, input_reference, audio = parts[:14]
                     if status == "queued":
-                        self.export_to_video(id, prompt, seconds, size, input_reference)
+                        # Process the first queued job found
+                        self.export_to_video(id, prompt, seconds, size, fps, shift, steps, guide_scale, seed, input_reference, audio)
                         status = "completed"
-                        updated_job = [id, status, created_str, prompt, seconds, size, quality, input_reference]
-                        updated_lines.append(sep.join(map(str, updated_job)))
-                    else:
-                        updated_lines.append(line)
+                        updated_job = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, seed, input_reference, audio]
+                        updated_lines[i] = sep.join(map(str, updated_job))
+                        job_processed = True
+                        break  # Exit after processing one job to rewrite the file
 
-                # Persist updated job list only if any queued processed
-                if updated_lines != lines:
+                # If a job was processed, rewrite the entire job file
+                if job_processed:
                     with open(job_file, "w") as f:
                         for l in updated_lines:
                             f.write(f"{l}\n")

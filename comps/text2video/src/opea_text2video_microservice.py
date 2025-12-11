@@ -32,8 +32,14 @@ async def resolve_request(request: Request):
     common_args = {
         "prompt": form.get("prompt", None),
         "input_reference": form.get("input_reference", None),
+        "audio": form.get("audio", None),
         "model": form.get("model", None),
         "seconds": int(form.get("seconds", 4)),
+        "fps": int(form.get("fps", 24)),
+        "shift": float(form.get("shift", 5.0)),
+        "steps": int(form.get("fps", 50)),
+        "seed": int(form.get("seed", 42)),
+        "guide_scale": float(form.get("shift", 5.0)),
         "size": form.get("size", "720x1280"),
     }
 

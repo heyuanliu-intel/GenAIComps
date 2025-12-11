@@ -14,10 +14,27 @@ from comps import (
     register_statistics,
     statistics_dict,
 )
+
+from fastapi import Depends, Request
 from comps.cores.proto.api_protocol import AudioSpeechRequest
 from comps.text2audio.src.integrations.native import OpeaText2audio
 
 logger = CustomLogger("opea_text2audio_microservice")
+
+
+async def resolve_request(request: Request):
+    form = await request.form()
+    common_args = {
+        "input": form.get("input"),
+        "sample": form.get("sample", None),
+        "sample_input": form.get("sample_input", None),
+        "model": form.get("model", "iic/CosyVoice2-0.5B"),
+        "voice": form.get("voice", "default"),
+        "speed": float(form.get("speed", 1.0)),
+        "seed": int(form.get("seed", 0)),
+        "response_format": form.get("response_format", "wav"),
+    }
+    return AudioSpeechRequest(**common_args)
 
 
 @register_microservice(
@@ -30,7 +47,7 @@ logger = CustomLogger("opea_text2audio_microservice")
     output_datatype=bytes,
 )
 @register_statistics(names=["opea_service@text2audio"])
-async def text2audio(input: AudioSpeechRequest):
+async def text2audio(input: AudioSpeechRequest = Depends(resolve_request)):
     start = time.time()
     try:
         # Use the loader to invoke the active component

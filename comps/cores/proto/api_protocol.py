@@ -1076,30 +1076,53 @@ class ArbPostHearingAssistantChatCompletionRequest(ChatCompletionRequest):
     type: Optional[str] = None
 
 
-class AudioSpeechRequest(BaseModel):
-    # Ordered by official OpenAI API documentation
-    # default values are same with
-    # https://platform.openai.com/docs/api-reference/audio/createSpeech
-    input: str
-    model: Optional[str] = "iic/CosyVoice2-0.5B"
-    voice: Optional[str] = "default"
-    response_format: Optional[str] = "wav"
-    speed: Optional[NonNegativeFloat] = 1.0
+class AudioSpeechRequest:
+    def __init__(
+        self,
+        input: str = Form(...),
+        sample: Optional[UploadFile] = File(None),
+        sample_input: Optional[str] = File(None),
+        model: Optional[str] = Form("iic/CosyVoice2-0.5B"),
+        voice: Optional[str] = "default",
+        speed: Optional[NonNegativeFloat] = Form(1.0),
+        seed: Optional[int] = Form(0),
+        response_format: Optional[str] = Form("wav")
+    ):
+        self.input = input
+        self.sample = sample
+        self.sample_input = sample_input
+        self.model = model
+        self.voice = voice
+        self.speed = speed
+        self.seed = seed
+        self.response_format = response_format
 
 
 class Text2VideoInput:
     def __init__(
         self,
-        prompt: str = Form(...),
+        prompt: str = Form(None),
         input_reference: Optional[UploadFile] = File(None),
+        audio: Optional[UploadFile] = File(None),
         model: Optional[str] = Form(None),
         seconds: Optional[int] = Form(4),
+        fps: Optional[int] = Form(24),
+        shift: Optional[float] = Form(5.0),
+        steps: Optional[int] = Form(50),
+        seed: Optional[int] = Form(42),
+        guide_scale: Optional[float] = Form(5.0),
         size: Optional[str] = Form("720x1280")
     ):
         self.prompt = prompt
         self.input_reference = input_reference
+        self.audio = audio
         self.model = model
         self.seconds = seconds
+        self.fps = fps
+        self.shift = shift
+        self.steps = steps
+        self.seed = seed
+        self.guide_scale = guide_scale
         self.size = size
 
 

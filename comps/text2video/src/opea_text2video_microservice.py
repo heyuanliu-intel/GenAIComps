@@ -198,9 +198,13 @@ def main():
     global component_loader
 
     parser = argparse.ArgumentParser(description="Text-to-Video Microservice")
+    parser.add_argument("--model_name_or_path", type=str, default="Wan-AI/Wan2.2-TI2V-5B-Diffusers", help="Model name or path.")
     parser.add_argument("--video_dir", type=str, default="/home/user/video", help="Video output directory.")
 
     args = parser.parse_args()
+
+    if not os.environ.get("MODEL"):
+        os.environ["MODEL"] = args.model_name_or_path
     os.environ["VIDEO_DIR"] = args.video_dir
     os.environ["SEP"] = "$###$"
     text2video_component_name = os.getenv("TEXT2VIDEO_COMPONENT_NAME", "OPEA_TEXT2VIDEO")

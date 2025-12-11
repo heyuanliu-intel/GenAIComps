@@ -43,9 +43,8 @@ def main():
     parser.add_argument("--model_name_or_path", type=str, default="Wan-AI/Wan2.2-TI2V-5B-Diffusers", help="Model name or path.")
     parser.add_argument("--use_habana", action="store_true", help="Use HPU.")
     parser.add_argument("--use_hpu_graphs", action="store_true", help="Enable HPU graphs.")
-    parser.add_argument("--device", type=str, default="cpu", help="Device to run the model on (e.g., 'cpu', 'hpu').")
+    parser.add_argument("--device", type=str, default="hpu", help="Device to run the model on (e.g., 'cpu', 'hpu').")
     parser.add_argument("--dtype", default="bf16", choices=["bf16", "fp32", "autocast_bf16"], help="Which runtime dtype to perform generation in.")
-    parser.add_argument("--context_parallel_size", type=int, default=1, help="Determines how many ranks are divided into context parallel group.")
     parser.add_argument("--video_dir", type=str, default="/home/user/video", help="Video output directory.")
     parser.add_argument("--sep", type=str, default="$###$", help="Video output directory.")
     args = parser.parse_args()
@@ -76,14 +75,6 @@ def main():
         kwargs["torch_dtype"] = torch.bfloat16
     elif args.dtype == "fp32":
         kwargs["torch_dtype"] = torch.float32
-
-    if args.context_parallel_size > 1 and parallel_state.is_unitialized():
-        if not torch.distributed.is_initialized():
-            import deepspeed
-
-            torch.distributed.init_process_group(backend="hccl")
-            deepspeed.init_distributed(dist_backend="hccl")
-        parallel_state.initialize_model_parallel(sequence_parallel_size=args.context_parallel_size, use_fp8=False)
 
     pipeline: GaudiWanPipeline = GaudiWanPipeline.from_pretrained(args.model_name_or_path, **kwargs)
     negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"

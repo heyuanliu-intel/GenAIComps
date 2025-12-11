@@ -3,6 +3,8 @@
 
 import os
 import time
+import random
+
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
 
@@ -43,7 +45,7 @@ class OpeaText2Video(OpeaComponent):
         """
         job_file = os.path.join(self.video_dir, "job.txt")
         created = time.time()
-        job_id = f"video_{int(created)}"
+        job_id = f"video_{int(created)}_{random.randint(1000, 9999)}"
         status = "queued"
         quality = "standard"
         job = [

@@ -143,6 +143,7 @@ async def get_video(video_id: str):
                         seconds=job[4],
                         size=job[5],
                         quality=job[6],
+                        error=job[13] if job[1] == "error" else ""
                     )
 
     content = {

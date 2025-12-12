@@ -4,6 +4,7 @@
 import os
 import time
 import random
+import json
 
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
@@ -68,13 +69,13 @@ class OpeaText2Video(OpeaComponent):
         job_dir = os.path.join(self.video_dir, job_id)
         os.makedirs(job_dir, exist_ok=True)
         input_json = os.path.join(job_dir, "input.json")
-        input = {
+        input_json_content = {
             "prompt": input.prompt,
             "audio_type": input.audio_type
         }
         if input.input_reference:
-            image_file = os.path.join(job_dir, "input_reference")
-            input["cond_video"] = image_file
+            image_file = os.path.join(job_dir, input.input_reference.filename)
+            input_json_content["cond_video"] = image_file
             contents = await input.input_reference.read()
             with open(image_file, "wb") as img_f:
                 img_f.write(contents)
@@ -82,15 +83,15 @@ class OpeaText2Video(OpeaComponent):
         if input.audio and isinstance(input.audio, list):
             audio = {}
             for idx, audio_file in enumerate(input.audio):
-                audio_path = os.path.join(job_dir, f"audio_{idx}")
+                audio_path = os.path.join(job_dir, audio_file.filename)
                 audio[f"person{idx+1}"] = audio_path
                 contents = await audio_file.read()
                 with open(audio_path, "wb") as audio_f:
                     audio_f.write(contents)
-            input["cond_audio"] = audio
+            input_json_content["cond_audio"] = audio
 
         with open(input_json, "w") as f:
-            f.write(str(input))
+            json.dump(input_json_content, f, indent=4)
 
         # Append the new job to the job file
         with open(job_file, "a") as f:

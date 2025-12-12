@@ -1140,6 +1140,7 @@ class Text2VideoOutput(BaseModel):
     size: str
     seconds: str
     quality: str
+    error: str = ""
 
 
 class ImgsGeneInputs(BaseModel):

@@ -12,13 +12,14 @@ COPY comps /home/user/comps
 
 RUN apt update && apt install -y ffmpeg
 RUN cd /home/user && git clone https://github.com/heyuanliu-intel/WanImageProcessor.git
+RUN cd /home/user && git clone https://github.com/HabanaAI/optimum-habana-fork.git -b aice/v1.22.0
 RUN chown -R user /home/user/comps/text2video
 
 RUN rm -rf /etc/ssh/ssh_host*
 
 # Set environment variables
 ENV LANG=en_US.UTF-8
-ENV PYTHONPATH=/home/user:/usr/lib/habanalabs/:/home/user/optimum-habana
+ENV PYTHONPATH=/home/user:/usr/lib/habanalabs/:/home/user/optimum-habana:/home/user/optimum-habana-fork/examples/InfiniteTalk/infinitetalk/
 
 # Install requirements and optimum habana, numpy==1.23.5 required by vault.habana.ai/gaudi-docker/1.20.1/ubuntu22.04/habanalabs/pytorch-installer-2.6.0
 ARG uvpip='uv pip install --system --no-cache-dir'
@@ -31,6 +32,5 @@ RUN pip install --no-cache-dir --upgrade pip setuptools uv && \
 USER user
 WORKDIR /home/user/comps/text2video/src
 
-RUN echo 'nohup python3 opea_text2video_microservice.py > microservice.log 2>&1 && PT_HPU_LAZY_MODE=1 torchrun --nproc_per_node=$RANK text_to_video_generation.py --use_habana --dtype bf16 --device hpu --model_name_or_path $MODEL' >> run.sh
-
-CMD ["bash", "run.sh"]
+# RUN echo 'nohup python3 opea_text2video_microservice.py > microservice.log 2>&1 && PT_HPU_LAZY_MODE=1 torchrun --nproc_per_node=$RANK text_to_video_generation.py --use_habana --dtype bf16 --device hpu --model_name_or_path $MODEL' >> run.sh
+# CMD ["bash", "run.sh"]

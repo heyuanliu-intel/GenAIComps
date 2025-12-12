@@ -1103,7 +1103,7 @@ class Text2VideoInput:
         self,
         prompt: str = Form(None),
         input_reference: Optional[UploadFile] = File(None),
-        audio: Optional[UploadFile] = File(None),
+        audio: Union[UploadFile, List[UploadFile]] = File(None),
         audio_guide_scale: Optional[float] = Form(5.0),
         audio_type: Optional[str] = Form("add"),
         model: Optional[str] = Form(None),

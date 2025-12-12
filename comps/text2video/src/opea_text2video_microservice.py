@@ -29,10 +29,16 @@ LOGFLAG = os.getenv("LOGFLAG", "False").lower() in ("true", "1", "t")
 
 async def resolve_request(request: Request):
     form = await request.form()
+    audio = []
+    if "audio[]" in form:
+        audio += form.getlist("audio[]")
+    elif "audio" in form:
+        audio += form.getlist("audio")
+
     common_args = {
         "prompt": form.get("prompt", None),
         "input_reference": form.get("input_reference", None),
-        "audio": form.get("audio", None),
+        "audio": audio,
         "audio_guide_scale": float(form.get("audio_guide_scale", 5.0)),
         "audio_type": form.get("audio_type", "add"),
         "model": form.get("model", None),
@@ -178,7 +184,7 @@ async def get_video_content(video_id: str):
                             quality=job[6],
                         )
                     else:
-                        video_file = os.path.join(os.getenv("VIDEO_DIR"), f"{video_id}.mp4")
+                        video_file = os.path.join(os.getenv("VIDEO_DIR"), video_id, "output.mp4")
                         if os.path.exists(video_file):
                             return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
 

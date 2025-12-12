@@ -46,6 +46,7 @@ class OpeaText2Video(OpeaComponent):
         job_file = os.path.join(self.video_dir, "job.txt")
         created = time.time()
         job_id = f"video_{int(created)}_{random.randint(1000, 9999)}"
+        # id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed
         status = "queued"
         quality = "standard"
         job = [
@@ -61,29 +62,37 @@ class OpeaText2Video(OpeaComponent):
             input.steps,
             input.guide_scale,
             input.audio_guide_scale,
-            input.audio_type,
             input.seed
         ]
 
+        job_dir = os.path.join(self.video_dir, job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        input_json = os.path.join(job_dir, "input.json")
+        input = {
+            "prompt": input.prompt,
+            "audio_type": input.audio_type
+        }
         if input.input_reference:
-            image_file = os.path.join(self.video_dir, f"{job_id}_input_reference")
+            image_file = os.path.join(job_dir, "input_reference")
+            input["cond_video"] = image_file
             contents = await input.input_reference.read()
             with open(image_file, "wb") as img_f:
                 img_f.write(contents)
-            job.append(image_file)
-        else:
-            job.append("N/A")
 
-        if input.audio:
-            audio_file = os.path.join(self.video_dir, f"{job_id}_audio")
-            contents = await input.audio.read()
-            with open(audio_file, "wb") as audio_f:
-                audio_f.write(contents)
-            job.append(audio_file)
-        else:
-            job.append("N/A")
+        if input.audio and isinstance(input.audio, list):
+            audio = {}
+            for idx, audio_file in enumerate(input.audio):
+                audio_path = os.path.join(job_dir, f"audio_{idx}")
+                audio[f"person{idx+1}"] = audio_path
+                contents = await audio_file.read()
+                with open(audio_path, "wb") as audio_f:
+                    audio_f.write(contents)
+            input["cond_audio"] = audio
 
-            # Append the new job to the job file
+        with open(input_json, "w") as f:
+            f.write(str(input))
+
+        # Append the new job to the job file
         with open(job_file, "a") as f:
             f.write(os.getenv("SEP").join(map(str, job)))
             f.write("\n")

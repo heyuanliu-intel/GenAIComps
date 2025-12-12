@@ -352,7 +352,6 @@ def generate(args):
             with open(job_file, "r") as f:
                 lines = [line.strip() for line in f if line.strip()]
 
-            updated_lines = list(lines)  # Make a mutable copy
             sep = args.sep
             job_processed = None
             for i, line in enumerate(lines):

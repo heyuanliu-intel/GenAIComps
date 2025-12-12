@@ -96,47 +96,67 @@ def main():
             with open(job_file, "r") as f:
                 lines = [line.strip() for line in f if line.strip()]
 
-            updated_lines = list(lines)  # Make a mutable copy
             sep = args.sep
-            job_processed = False
+            job_processed = None
             for i, line in enumerate(lines):
                 parts = line.split(sep)
-                if len(parts) < 16:
+                if len(parts) < 13:
                     continue
 
-                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, audio_type, seed, input_reference, audio = parts[:16]
-                if status == "queued":
-                    # Process the first queued job found
-                    fps = int(fps)
-                    num_frames = int(seconds) * fps + 1
-                    width, height = size.split("x")
-                    set_seed(int(seed))
-                    generator = torch.manual_seed(int(seed))
-                    output = pipeline(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        generator=generator,
-                        width=int(width),
-                        height=int(height),
-                        guidance_scale=float(guide_scale),
-                        num_inference_steps=int(steps),
-                        num_frames=num_frames,
-                    ).frames[0]
+                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed = parts[:13]
+                try:
+                    if status == "queued":
+                        # Process the first queued job found
+                        fps = int(fps)
+                        num_frames = int(seconds) * fps + 1
+                        width, height = size.split("x")
+                        set_seed(int(seed))
+                        generator = torch.manual_seed(int(seed))
+                        output = pipeline(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            generator=generator,
+                            width=int(width),
+                            height=int(height),
+                            guidance_scale=float(guide_scale),
+                            num_inference_steps=int(steps),
+                            num_frames=num_frames,
+                        ).frames[0]
 
-                    export_to_video(output, os.path.join(args.video_dir, f"{id}.mp4"), fps=fps)
-                    logger.info(f"Exported video for job {id} to {args.video_dir}/{id}.mp4")
+                        export_to_video(output, os.path.join(args.video_dir, f"{id}.mp4"), fps=fps)
+                        logger.info(f"Exported video for job {id} to {args.video_dir}/{id}.mp4")
 
-                    status = "completed"
-                    updated_job = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, audio_type, seed, input_reference, audio]
-                    updated_lines[i] = sep.join(map(str, updated_job))
-                    job_processed = True
-                    break  # Exit after processing one job to rewrite the file
+                        status = "completed"
+                        job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed]
+                        break  # Exit after processing one job to rewrite the file
+                except Exception as e:
+                    status = "error"
+                    job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, str(e)]
+                    break
 
             # If a job was processed, rewrite the entire job file
             if job_processed:
+                # Re-read the file to get the latest content before writing
+                with open(job_file, "r") as f:
+                    lines_before_write = [line.strip() for line in f if line.strip()]
+
+                # Find the job by ID and update it
+                job_id_to_update = job_processed[0]
+                found = False
+                for i, line in enumerate(lines_before_write):
+                    if line.startswith(job_id_to_update + sep):
+                        lines_before_write[i] = sep.join(map(str, job_processed))
+                        found = True
+                        break
+
+                # If the job was somehow removed from the file, add the new status at the end
+                if not found:
+                    lines_before_write.append(sep.join(map(str, job_processed)))
+
+                # Write the updated content back to the file
                 with open(job_file, "w") as f:
-                    for l in updated_lines:
-                        f.write(f"{l}\n")
+                    for line in lines_before_write:
+                        f.write(line + "\n")
 
         except Exception as e:
             logger.error(f"Job worker encountered an error: {e}")

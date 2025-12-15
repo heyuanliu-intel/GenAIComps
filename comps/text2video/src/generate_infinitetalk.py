@@ -392,52 +392,50 @@ def generate(args):
 
                                 conds_list = []
 
-                                if input_data["cond_video"]:
-                                    if args.scene_seg and is_video(input_data["cond_video"]):
-                                        time_list, cond_list = shot_detect(input_data["cond_video"], audio_save_dir)
-                                        if len(time_list) == 0:
-                                            conds_list.append([input_data["cond_video"]])
-                                            conds_list.append([input_data["cond_audio"]["person1"]])
-                                            if len(input_data["cond_audio"]) == 2:
-                                                conds_list.append([input_data["cond_audio"]["person2"]])
-                                        else:
-                                            audio1_list = split_wav_librosa(input_data["cond_audio"]["person1"], time_list, audio_save_dir)
-                                            conds_list.append(cond_list)
-                                            conds_list.append(audio1_list)
-                                            if len(input_data["cond_audio"]) == 2:
-                                                audio2_list = split_wav_librosa(input_data["cond_audio"]["person2"], time_list, audio_save_dir)
-                                                conds_list.append(audio2_list)
-                                    else:
+                                if args.scene_seg and is_video(input_data["cond_video"]):
+                                    time_list, cond_list = shot_detect(input_data["cond_video"], audio_save_dir)
+                                    if len(time_list) == 0:
                                         conds_list.append([input_data["cond_video"]])
                                         conds_list.append([input_data["cond_audio"]["person1"]])
                                         if len(input_data["cond_audio"]) == 2:
                                             conds_list.append([input_data["cond_audio"]["person2"]])
-
-                                if input_data["cond_audio"]:
-                                    if len(input_data["cond_audio"]) == 2:
-                                        new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(input_data["cond_audio"]["person1"], input_data["cond_audio"]["person2"], input_data["audio_type"])
-                                        sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
-                                        sf.write(sum_audio, sum_human_speechs, 16000)
-                                        input_data["video_audio"] = sum_audio
                                     else:
-                                        human_speech = audio_prepare_single(input_data["cond_audio"]["person1"])
-                                        sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
-                                        sf.write(sum_audio, human_speech, 16000)
-                                        input_data["video_audio"] = sum_audio
+                                        audio1_list = split_wav_librosa(input_data["cond_audio"]["person1"], time_list, audio_save_dir)
+                                        conds_list.append(cond_list)
+                                        conds_list.append(audio1_list)
+                                        if len(input_data["cond_audio"]) == 2:
+                                            audio2_list = split_wav_librosa(input_data["cond_audio"]["person2"], time_list, audio_save_dir)
+                                            conds_list.append(audio2_list)
+                                else:
+                                    conds_list.append([input_data["cond_video"]])
+                                    conds_list.append([input_data["cond_audio"]["person1"]])
+                                    if len(input_data["cond_audio"]) == 2:
+                                        conds_list.append([input_data["cond_audio"]["person2"]])
+
+                                if len(input_data["cond_audio"]) == 2:
+                                    new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(input_data["cond_audio"]["person1"], input_data["cond_audio"]["person2"], input_data["audio_type"])
+                                    sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                                    sf.write(sum_audio, sum_human_speechs, 16000)
+                                    input_data["video_audio"] = sum_audio
+                                else:
+                                    human_speech = audio_prepare_single(input_data["cond_audio"]["person1"])
+                                    sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                                    sf.write(sum_audio, human_speech, 16000)
+                                    input_data["video_audio"] = sum_audio
                                 logging.info("Generating video ...")
 
                                 for idx, items in enumerate(zip(*conds_list)):
                                     print(items)
                                     input_clip = {}
                                     input_clip["prompt"] = input_data["prompt"]
-                                    input_clip["cond_video"] = items[0] if len(items) > 0 else {}
+                                    input_clip["cond_video"] = items[0]
 
                                     if "audio_type" in input_data:
                                         input_clip["audio_type"] = input_data["audio_type"]
                                     if "bbox" in input_data:
                                         input_clip["bbox"] = input_data["bbox"]
                                     cond_audio = {}
-                                    if args.audio_mode == "localfile" and len(input_data["cond_audio"]) > 0:
+                                    if args.audio_mode == "localfile":
                                         if len(input_data["cond_audio"]) == 2:
                                             new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(items[1], items[2], input_data["audio_type"])
                                             audio_embedding_1 = get_embedding(new_human_speech1, wav2vec_feature_extractor, audio_encoder)

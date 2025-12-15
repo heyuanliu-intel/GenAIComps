@@ -29,6 +29,11 @@ from optimum.habana.transformers.gaudi_configuration import GaudiConfig
 from optimum.habana.utils import set_seed
 
 try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+try:
     from optimum.habana.utils import check_optimum_habana_min_version
 except ImportError:
     def check_optimum_habana_min_version(*a, **b):
@@ -92,71 +97,82 @@ def main():
                 time.sleep(1.0)
                 continue
 
-            # Read all jobs
+            job_to_process = None
+            # Find a job to process
             with open(job_file, "r") as f:
+                if fcntl:
+                    fcntl.flock(f, fcntl.LOCK_SH)
                 lines = [line.strip() for line in f if line.strip()]
+                if fcntl:
+                    fcntl.flock(f, fcntl.LOCK_UN)
 
             sep = args.sep
-            job_processed = None
             for i, line in enumerate(lines):
                 parts = line.split(sep)
-                if len(parts) < 13:
-                    continue
-
-                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed = parts[:13]
-                try:
-                    if status == "queued":
-                        # Process the first queued job found
-                        fps = int(fps)
-                        num_frames = int(seconds) * fps + 1
-                        width, height = size.split("x")
-                        set_seed(int(seed))
-                        generator = torch.manual_seed(int(seed))
-                        output = pipeline(
-                            prompt=prompt,
-                            negative_prompt=negative_prompt,
-                            generator=generator,
-                            width=int(width),
-                            height=int(height),
-                            guidance_scale=float(guide_scale),
-                            num_inference_steps=int(steps),
-                            num_frames=num_frames,
-                        ).frames[0]
-
-                        export_to_video(output, os.path.join(args.video_dir, f"{id}.mp4"), fps=fps)
-                        logger.info(f"Exported video for job {id} to {args.video_dir}/{id}.mp4")
-
-                        status = "completed"
-                        job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed]
-                        break  # Exit after processing one job to rewrite the file
-                except Exception as e:
-                    status = "error"
-                    job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, str(e)]
+                if len(parts) >= 2 and parts[1] == "queued":
+                    job_to_process = line
                     break
 
-            # If a job was processed, rewrite the entire job file
+            if not job_to_process:
+                time.sleep(1.0)
+                continue
+
+            # Process the job
+            job_processed = None
+            try:
+                parts = job_to_process.split(sep)
+                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed = parts[:13]
+
+                fps = int(fps)
+                num_frames = int(seconds) * fps + 1
+                width, height = size.split("x")
+                set_seed(int(seed))
+                generator = torch.manual_seed(int(seed))
+                output = pipeline(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    generator=generator,
+                    width=int(width),
+                    height=int(height),
+                    guidance_scale=float(guide_scale),
+                    num_inference_steps=int(steps),
+                    num_frames=num_frames,
+                ).frames[0]
+
+                export_to_video(output, os.path.join(args.video_dir, f"{id}.mp4"), fps=fps)
+                logger.info(f"Exported video for job {id} to {args.video_dir}/{id}.mp4")
+
+                status = "completed"
+                job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed]
+            except Exception as e:
+                logger.error(f"Error processing job {id}: {e}")
+                status = "error"
+                job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, str(e)]
+
+            # Update the job file with the new status
             if job_processed:
-                # Re-read the file to get the latest content before writing
-                with open(job_file, "r") as f:
+                with open(job_file, "r+") as f:
+                    if fcntl:
+                        fcntl.flock(f, fcntl.LOCK_EX)
                     lines_before_write = [line.strip() for line in f if line.strip()]
 
-                # Find the job by ID and update it
-                job_id_to_update = job_processed[0]
-                found = False
-                for i, line in enumerate(lines_before_write):
-                    if line.startswith(job_id_to_update + sep):
-                        lines_before_write[i] = sep.join(map(str, job_processed))
-                        found = True
-                        break
+                    job_id_to_update = job_processed[0]
+                    found = False
+                    for i, line in enumerate(lines_before_write):
+                        if line.startswith(job_id_to_update + sep):
+                            lines_before_write[i] = sep.join(map(str, job_processed))
+                            found = True
+                            break
 
-                # If the job was somehow removed from the file, add the new status at the end
-                if not found:
-                    lines_before_write.append(sep.join(map(str, job_processed)))
+                    if not found:
+                        lines_before_write.append(sep.join(map(str, job_processed)))
 
-                # Write the updated content back to the file
-                with open(job_file, "w") as f:
+                    f.seek(0)
+                    f.truncate()
                     for line in lines_before_write:
                         f.write(line + "\n")
+                    if fcntl:
+                        fcntl.flock(f, fcntl.LOCK_UN)
 
         except Exception as e:
             logger.error(f"Job worker encountered an error: {e}")

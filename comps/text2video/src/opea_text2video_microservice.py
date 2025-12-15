@@ -27,31 +27,46 @@ component_loader = None
 LOGFLAG = os.getenv("LOGFLAG", "False").lower() in ("true", "1", "t")
 
 
+def validate_form_parameters(form):
+    """Validate and convert form parameters to their expected types."""
+    try:
+        audio = []
+        if "audio[]" in form:
+            audio += form.getlist("audio[]")
+        elif "audio" in form:
+            audio += form.getlist("audio")
+
+        params = {
+            "prompt": form.get("prompt"),
+            "input_reference": form.get("input_reference"),
+            "audio": audio,
+            "audio_guide_scale": float(form.get("audio_guide_scale", 5.0)),
+            "audio_type": form.get("audio_type", "add"),
+            "model": form.get("model"),
+            "seconds": int(form.get("seconds", 4)),
+            "fps": int(form.get("fps", 24)),
+            "shift": float(form.get("shift", 5.0)),
+            "steps": int(form.get("steps", 50)),
+            "seed": int(form.get("seed", 42)),
+            "guide_scale": float(form.get("guide_scale", 5.0)),
+            "size": form.get("size", "720x1280"),
+        }
+        # Validate size format
+        width, height = params["size"].split("x")
+        if not (width.isdigit() and height.isdigit()):
+            raise ValueError("Invalid size format. Expected 'widthxheight'.")
+        return params, None
+    except (ValueError, TypeError) as e:
+        error_content = {"error": {"message": f"Invalid parameter type: {e}", "code": "400"}}
+        return None, JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=error_content)
+
+
 async def resolve_request(request: Request):
     form = await request.form()
-    audio = []
-    if "audio[]" in form:
-        audio += form.getlist("audio[]")
-    elif "audio" in form:
-        audio += form.getlist("audio")
-
-    common_args = {
-        "prompt": form.get("prompt", None),
-        "input_reference": form.get("input_reference", None),
-        "audio": audio,
-        "audio_guide_scale": float(form.get("audio_guide_scale", 5.0)),
-        "audio_type": form.get("audio_type", "add"),
-        "model": form.get("model", None),
-        "seconds": int(form.get("seconds", 4)),
-        "fps": int(form.get("fps", 24)),
-        "shift": float(form.get("shift", 5.0)),
-        "steps": int(form.get("steps", 50)),
-        "seed": int(form.get("seed", 42)),
-        "guide_scale": float(form.get("guide_scale", 5.0)),
-        "size": form.get("size", "720x1280"),
-    }
-
-    return Text2VideoInput(**common_args)
+    validated_params, error_response = validate_form_parameters(form)
+    if error_response:
+        return error_response
+    return Text2VideoInput(**validated_params)
 
 
 @register_microservice(
@@ -106,6 +121,8 @@ async def text2video(input_data: Text2VideoInput = Depends(resolve_request)) -> 
     Returns:
         Text2VideoOutput: The result of the video generation.
     """
+    if isinstance(input_data, JSONResponse):
+        return input_data
     start = time.time()
     if component_loader:
         results = await component_loader.invoke(input_data)

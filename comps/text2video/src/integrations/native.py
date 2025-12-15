@@ -5,6 +5,7 @@ import os
 import time
 import random
 import json
+import fcntl
 
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
@@ -93,10 +94,16 @@ class OpeaText2Video(OpeaComponent):
         with open(input_json, "w") as f:
             json.dump(input_json_content, f, indent=4)
 
-        # Append the new job to the job file
+        sep = os.getenv("SEP", "##$##")
+        line = sep.join(map(str, job)) + "\n"
         with open(job_file, "a") as f:
-            f.write(os.getenv("SEP").join(map(str, job)))
-            f.write("\n")
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.write(line)
+                f.flush()
+                os.fsync(f.fileno())
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
         logger.info(f"Job {job_id} queued with prompt: {input.prompt}")
         return Text2VideoOutput(

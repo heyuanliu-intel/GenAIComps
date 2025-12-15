@@ -17,8 +17,12 @@ import torch.distributed as dist
 import soundfile as sf
 import pyloudnorm as pyln
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 from einops import rearrange
-from datetime import datetime
 from kokoro import KPipeline
 from src.audio_analysis.wav2vec2 import Wav2Vec2Model
 from transformers import Wav2Vec2FeatureExtractor
@@ -349,8 +353,12 @@ def generate(args):
                 continue
 
             # Read all jobs
-            with open(job_file, "r") as f:
+            with open(job_file, "r", encoding="utf-8") as f:
+                if fcntl:
+                    fcntl.flock(f, fcntl.LOCK_SH)
                 lines = [line.strip() for line in f if line.strip()]
+                if fcntl:
+                    fcntl.flock(f, fcntl.LOCK_UN)
 
             sep = args.sep
             job_processed = None
@@ -384,50 +392,52 @@ def generate(args):
 
                                 conds_list = []
 
-                                if args.scene_seg and is_video(input_data["cond_video"]):
-                                    time_list, cond_list = shot_detect(input_data["cond_video"], audio_save_dir)
-                                    if len(time_list) == 0:
+                                if input_data["cond_video"]:
+                                    if args.scene_seg and is_video(input_data["cond_video"]):
+                                        time_list, cond_list = shot_detect(input_data["cond_video"], audio_save_dir)
+                                        if len(time_list) == 0:
+                                            conds_list.append([input_data["cond_video"]])
+                                            conds_list.append([input_data["cond_audio"]["person1"]])
+                                            if len(input_data["cond_audio"]) == 2:
+                                                conds_list.append([input_data["cond_audio"]["person2"]])
+                                        else:
+                                            audio1_list = split_wav_librosa(input_data["cond_audio"]["person1"], time_list, audio_save_dir)
+                                            conds_list.append(cond_list)
+                                            conds_list.append(audio1_list)
+                                            if len(input_data["cond_audio"]) == 2:
+                                                audio2_list = split_wav_librosa(input_data["cond_audio"]["person2"], time_list, audio_save_dir)
+                                                conds_list.append(audio2_list)
+                                    else:
                                         conds_list.append([input_data["cond_video"]])
                                         conds_list.append([input_data["cond_audio"]["person1"]])
                                         if len(input_data["cond_audio"]) == 2:
                                             conds_list.append([input_data["cond_audio"]["person2"]])
-                                    else:
-                                        audio1_list = split_wav_librosa(input_data["cond_audio"]["person1"], time_list, audio_save_dir)
-                                        conds_list.append(cond_list)
-                                        conds_list.append(audio1_list)
-                                        if len(input_data["cond_audio"]) == 2:
-                                            audio2_list = split_wav_librosa(input_data["cond_audio"]["person2"], time_list, audio_save_dir)
-                                            conds_list.append(audio2_list)
-                                else:
-                                    conds_list.append([input_data["cond_video"]])
-                                    conds_list.append([input_data["cond_audio"]["person1"]])
-                                    if len(input_data["cond_audio"]) == 2:
-                                        conds_list.append([input_data["cond_audio"]["person2"]])
 
-                                if len(input_data["cond_audio"]) == 2:
-                                    new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(input_data["cond_audio"]["person1"], input_data["cond_audio"]["person2"], input_data["audio_type"])
-                                    sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
-                                    sf.write(sum_audio, sum_human_speechs, 16000)
-                                    input_data["video_audio"] = sum_audio
-                                else:
-                                    human_speech = audio_prepare_single(input_data["cond_audio"]["person1"])
-                                    sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
-                                    sf.write(sum_audio, human_speech, 16000)
-                                    input_data["video_audio"] = sum_audio
+                                if input_data["cond_audio"]:
+                                    if len(input_data["cond_audio"]) == 2:
+                                        new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(input_data["cond_audio"]["person1"], input_data["cond_audio"]["person2"], input_data["audio_type"])
+                                        sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                                        sf.write(sum_audio, sum_human_speechs, 16000)
+                                        input_data["video_audio"] = sum_audio
+                                    else:
+                                        human_speech = audio_prepare_single(input_data["cond_audio"]["person1"])
+                                        sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                                        sf.write(sum_audio, human_speech, 16000)
+                                        input_data["video_audio"] = sum_audio
                                 logging.info("Generating video ...")
 
                                 for idx, items in enumerate(zip(*conds_list)):
                                     print(items)
                                     input_clip = {}
                                     input_clip["prompt"] = input_data["prompt"]
-                                    input_clip["cond_video"] = items[0]
+                                    input_clip["cond_video"] = items[0] if len(items) > 0 else {}
 
                                     if "audio_type" in input_data:
                                         input_clip["audio_type"] = input_data["audio_type"]
                                     if "bbox" in input_data:
                                         input_clip["bbox"] = input_data["bbox"]
                                     cond_audio = {}
-                                    if args.audio_mode == "localfile":
+                                    if args.audio_mode == "localfile" and len(input_data["cond_audio"]) > 0:
                                         if len(input_data["cond_audio"]) == 2:
                                             new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(items[1], items[2], input_data["audio_type"])
                                             audio_embedding_1 = get_embedding(new_human_speech1, wav2vec_feature_extractor, audio_encoder)
@@ -485,27 +495,33 @@ def generate(args):
 
             # If a job was processed, rewrite the entire job file
             if job_processed:
-                # Re-read the file to get the latest content before writing
-                with open(job_file, "r") as f:
+                with open(job_file, "r+", encoding="utf-8") as f:
+                    if fcntl:
+                        fcntl.flock(f, fcntl.LOCK_EX)
+                    # Re-read the file to get the latest content before writing
+                    f.seek(0)
                     lines_before_write = [line.strip() for line in f if line.strip()]
 
-                # Find the job by ID and update it
-                job_id_to_update = job_processed[0]
-                found = False
-                for i, line in enumerate(lines_before_write):
-                    if line.startswith(job_id_to_update + sep):
-                        lines_before_write[i] = sep.join(map(str, job_processed))
-                        found = True
-                        break
+                    # Find the job by ID and update it
+                    job_id_to_update = job_processed[0]
+                    found = False
+                    for i, line in enumerate(lines_before_write):
+                        if line.startswith(job_id_to_update + sep):
+                            lines_before_write[i] = sep.join(map(str, job_processed))
+                            found = True
+                            break
 
-                # If the job was somehow removed from the file, add the new status at the end
-                if not found:
-                    lines_before_write.append(sep.join(map(str, job_processed)))
+                    # If the job was somehow removed from the file, add the new status at the end
+                    if not found:
+                        lines_before_write.append(sep.join(map(str, job_processed)))
 
-                # Write the updated content back to the file
-                with open(job_file, "w") as f:
+                    # Write the updated content back to the file
+                    f.seek(0)
+                    f.truncate()
                     for line in lines_before_write:
                         f.write(line + "\n")
+                    if fcntl:
+                        fcntl.flock(f, fcntl.LOCK_UN)
 
         except Exception as e:
             if rank == 0:

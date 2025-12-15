@@ -55,6 +55,10 @@ def validate_form_parameters(form):
         width, height = params["size"].split("x")
         if not (width.isdigit() and height.isdigit()):
             raise ValueError("Invalid size format. Expected 'widthxheight'.")
+
+        if not params["prompt"] and not params["input_reference"] and not params["audio"]:
+            raise ValueError("At least one of 'prompt', 'input_reference' or 'audio' must be provided.")
+
         return params, None
     except (ValueError, TypeError) as e:
         error_content = {"error": {"message": f"Invalid parameter type: {e}", "code": "400"}}

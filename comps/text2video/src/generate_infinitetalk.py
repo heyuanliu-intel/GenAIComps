@@ -427,7 +427,7 @@ def generate(args):
                                 for idx, items in enumerate(zip(*conds_list)):
                                     print(items)
                                     input_clip = {}
-                                    input_clip["prompt"] = input_data["prompt"]
+                                    input_clip["prompt"] = input_data["prompt"] if input_data["prompt"] and len(input_data["prompt"]) > 0 else ""
                                     input_clip["cond_video"] = items[0]
 
                                     if "audio_type" in input_data:
@@ -487,6 +487,8 @@ def generate(args):
                         job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed]
                         break  # Exit after processing one job to rewrite the file
                 except Exception as e:
+                    if rank == 0:
+                        logging.error(f"Job worker encountered an error: {e}")
                     status = "error"
                     job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, str(e)]
                     break

@@ -70,10 +70,14 @@ class OpeaText2Video(OpeaComponent):
         job_dir = os.path.join(self.video_dir, job_id)
         os.makedirs(job_dir, exist_ok=True)
         input_json = os.path.join(job_dir, "input.json")
-        input_json_content = {
-            "prompt": input.prompt,
-            "audio_type": input.audio_type
-        }
+        input_json_content = {}
+
+        if input.prompt and len(input.prompt) > 0:
+            input_json_content["prompt"] = input.prompt
+
+        if input.audio_type:
+            input_json_content["audio_type"] = input.audio_type
+
         if input.input_reference:
             image_file = os.path.join(job_dir, input.input_reference.filename)
             input_json_content["cond_video"] = image_file

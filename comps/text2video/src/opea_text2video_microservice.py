@@ -50,9 +50,10 @@ def validate_form_parameters(form):
             "seed": int(form.get("seed", 42)),
             "guide_scale": float(form.get("guide_scale", 5.0)),
             "size": form.get("size", "720x1280"),
+            "logo_video": form.get("logo_video", "False")
         }
 
-        if params.seconds <= 0:
+        if params["seconds"] <= 0:
             raise ValueError("The 'seconds' parameter must be greater than 0.")
 
         # Validate size format
@@ -90,6 +91,8 @@ def generate_response(video_id) -> Text2VideoOutput:
                 job = line.strip().split(sep)
                 if job[0] == video_id:
                     job_info = job
+                    queue_length += 1
+                    queue_seconds += int(job[4])
                 elif job[1] in ["queued"]:
                     queue_length += 1
                     queue_seconds += int(job[4])

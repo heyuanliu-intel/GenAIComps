@@ -47,7 +47,6 @@ class OpeaText2Video(OpeaComponent):
         Args:
             input (Text2VideoInput): The input data containing the prompt and other parameters.
         """
-        job_file = os.path.join(self.video_dir, "job.txt")
         created = time.time()
         job_id = f"video_{int(created)}_{random.randint(1000, 9999)}"
         job_dir = os.path.join(self.video_dir, job_id)
@@ -77,19 +76,18 @@ class OpeaText2Video(OpeaComponent):
                 contents = await audio_file.read()
                 with open(audio_path, "wb") as audio_f:
                     audio_f.write(contents)
-                try:
-                    with sf.SoundFile(io.BytesIO(contents)) as f:
-                        duration = f.frames / f.samplerate
-                        audio_durations.append(duration)
-                except Exception as e:
-                    raise ValueError(f"Could not get audio duration for {audio_file.filename}: {e}")
+                    try:
+                        with sf.SoundFile(io.BytesIO(contents)) as f:
+                            duration = f.frames / f.samplerate
+                            audio_durations.append(duration)
+                    except Exception as e:
+                        raise ValueError(f"Could not get audio duration for {audio_file.filename}: {e}")
             input_json_content["cond_audio"] = audio
 
         with open(input_json, "w") as f:
             json.dump(input_json_content, f, indent=4)
 
-        logger.info(f"Input JSON for job {job_id}: {json.dump(input_json_content, f, indent=4)}")
-        seconds = min(int(input.seconds), min(audio_durations) if audio_durations else int(input.seconds))
+        seconds = min(int(input.seconds), int(min(audio_durations)) if audio_durations else int(input.seconds))
         logger.info(f"set audio seconds to {seconds} and audio durations for job {job_id}: {audio_durations}")
         if seconds <= 0:
             raise ValueError("The provided audio files have non-positive durations.")
@@ -116,11 +114,13 @@ class OpeaText2Video(OpeaComponent):
             input.logo_video,
             generate_duration,
             start_time,
-            end_time
+            end_time,
+            ""
         ]
 
         sep = os.getenv("SEP", "##$##")
         line = sep.join(map(str, job)) + "\n"
+        job_file = os.path.join(self.video_dir, "job.txt")
         with open(job_file, "a") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:

@@ -1114,7 +1114,7 @@ class Text2VideoInput:
         seed: Optional[int] = Form(42),
         guide_scale: Optional[float] = Form(5.0),
         size: Optional[str] = Form("720x1280"),
-        logo_video: Optional[bool] = Form(False)
+        logo_video: Optional[bool] = Form("False")
     ):
         self.prompt = prompt
         self.input_reference = input_reference

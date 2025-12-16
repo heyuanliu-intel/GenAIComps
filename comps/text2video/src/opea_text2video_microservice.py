@@ -93,15 +93,15 @@ def generate_response(video_id) -> Text2VideoOutput:
                     job_info = job
                     queue_length += 1
                     queue_seconds += int(job[4])
-                elif job[1] in ["queued"]:
+                elif job[1] in ["queued", "processing"]:
                     queue_length += 1
                     queue_seconds += int(job[4])
         if job_info:
             if job_info[1] == "processing":
-                estimated_time = int(job_info[4]) * 30
+                estimated_time = int(job_info[4]) * 60
                 start_time = int(job_info[-2])
-                elapsed_time = time.time() - start_time
-                progress = min(int((elapsed_time / estimated_time) * 100), 99)
+                elapsed_time = int(time.time()) - start_time
+                progress = int(min(int((elapsed_time / estimated_time) * 100), 99))
                 return Text2VideoOutput(
                     id=job_info[0],
                     model=os.getenv("MODEL"),
@@ -109,8 +109,8 @@ def generate_response(video_id) -> Text2VideoOutput:
                     progress=progress,
                     created_at=int(job_info[2]),
                     seconds=job_info[4],
-                    duration=elapsed_time,
-                    estimated_time=max(estimated_time - int(elapsed_time), 0)//60,
+                    duration=0,
+                    estimated_time=max(1, int(progress * estimated_time//6000)),
                     queue_length=0,
                     error=job_info[-1] if job_info[1] == "error" else ""
                 )
@@ -122,9 +122,9 @@ def generate_response(video_id) -> Text2VideoOutput:
                     progress=100 if job_info[1] == "completed" else 0,
                     created_at=int(job_info[2]),
                     seconds=job_info[4],
-                    duration=job_info[-3],
-                    estimated_time=queue_seconds//2,
-                    queue_length=queue_length,
+                    duration=job_info[14],
+                    estimated_time=0 if job_info[1] == "completed" else queue_seconds,
+                    queue_length=0 if job_info[1] == "completed" else queue_length,
                     error=job_info[-1] if job_info[1] == "error" else ""
                 )
 

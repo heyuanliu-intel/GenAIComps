@@ -403,10 +403,10 @@ def generate(args):
 
                 id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time = parts[:17]
                 try:
-                    if status == "queued":
+                    if status in ["queued", "processing"]:
                         # Process the first queued job found
                         generate_start_time = time.time()
-                        job = [id, "processing", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, generate_start_time, end_time]
+                        job = [id, "processing", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, int(generate_start_time), end_time]
                         update_job(job, args)
 
                         fps = int(fps)
@@ -522,12 +522,12 @@ def generate(args):
                                     save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False)
 
                         generate_end_time = time.time()
-                        job_processed = [id, "completed", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, generate_end_time - generate_start_time), generate_start_time, generate_end_time, ""]
+                        job_processed = [id, "completed", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), ""]
                         break  # Exit after processing one job to rewrite the file
                 except Exception as e:
                     logging.error(f"error: {e}")
                     generate_end_time = time.time()
-                    job_processed = [id, "error", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, generate_end_time - generate_start_time), generate_start_time, generate_end_time, str(e)]
+                    job_processed = [id, "error", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), str(e)]
                     break
 
             update_job(job_processed, args)

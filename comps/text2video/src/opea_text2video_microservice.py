@@ -82,7 +82,7 @@ def generate_response(video_id) -> Text2VideoOutput:
     job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
     if os.path.exists(job_file):
         sep = os.getenv("SEP")
-        queue_seconds = 0
+        queue_estimated_time_in_minutes = 0
         queue_length = 0
         job_info = None
         with open(job_file, "r") as f:
@@ -91,17 +91,17 @@ def generate_response(video_id) -> Text2VideoOutput:
                 job = line.strip().split(sep)
                 if job[0] == video_id:
                     job_info = job
+
+                if job[1] in ["queued", "processing"]:
                     queue_length += 1
-                    queue_seconds += int(job[4])
-                elif job[1] in ["queued", "processing"]:
-                    queue_length += 1
-                    queue_seconds += int(job[4])
+                    queue_estimated_time_in_minutes += int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 2
+
         if job_info:
             if job_info[1] == "processing":
-                estimated_time = int(job_info[4]) * 60
+                estimated_time = int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 2
                 start_time = int(job_info[-2])
                 elapsed_time = int(time.time()) - start_time
-                progress = int(min(int((elapsed_time / estimated_time) * 100), 99))
+                progress = int(min(int((elapsed_time / (estimated_time * 60)) * 100), 99))
                 return Text2VideoOutput(
                     id=job_info[0],
                     model=os.getenv("MODEL"),
@@ -110,7 +110,7 @@ def generate_response(video_id) -> Text2VideoOutput:
                     created_at=int(job_info[2]),
                     seconds=job_info[4],
                     duration=0,
-                    estimated_time=max(1, int(progress * estimated_time//6000)),
+                    estimated_time=max(1, int(estimated_time - (elapsed_time / 60))),
                     queue_length=0,
                     error=job_info[-1] if job_info[1] == "error" else ""
                 )
@@ -123,7 +123,7 @@ def generate_response(video_id) -> Text2VideoOutput:
                     created_at=int(job_info[2]),
                     seconds=job_info[4],
                     duration=job_info[14],
-                    estimated_time=0 if job_info[1] == "completed" else queue_seconds,
+                    estimated_time=0 if job_info[1] == "completed" else queue_estimated_time_in_minutes,
                     queue_length=0 if job_info[1] == "completed" else queue_length,
                     error=job_info[-1] if job_info[1] == "error" else ""
                 )

@@ -87,7 +87,7 @@ class OpeaText2Video(OpeaComponent):
         with open(input_json, "w") as f:
             json.dump(input_json_content, f, indent=4)
 
-        seconds = min(int(input.seconds), int(min(audio_durations)) if audio_durations else int(input.seconds))
+        seconds = int(min(audio_durations)) if audio_durations else 20
         logger.info(f"set audio seconds to {seconds} and audio durations for job {job_id}: {audio_durations}")
         if seconds <= 0:
             raise ValueError("The provided audio files have non-positive durations.")

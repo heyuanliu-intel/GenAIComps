@@ -51,6 +51,10 @@ def validate_form_parameters(form):
             "guide_scale": float(form.get("guide_scale", 5.0)),
             "size": form.get("size", "720x1280"),
         }
+
+        if params.seconds <= 0:
+            raise ValueError("The 'seconds' parameter must be greater than 0.")
+
         # Validate size format
         width, height = params["size"].split("x")
         if not (width.isdigit() and height.isdigit()):
@@ -73,36 +77,61 @@ async def resolve_request(request: Request):
     return Text2VideoInput(**validated_params)
 
 
-@register_microservice(
-    name="opea_service@text2video",
-    service_type=ServiceType.TEXT2VIDEO,
-    endpoint="/v1/models",
-    host="0.0.0.0",
-    port=9396,
-    methods=["GET"],
-)
-async def models():
-    """Get the available model information."""
-    model_name_or_path = os.getenv("MODEL", "Wan-AI/Wan2.2-TI2V-5B-Diffusers")
-    if LOGFLAG:
-        logger.info(f"Get model: {model_name_or_path}")
+def generate_response(video_id) -> Text2VideoOutput:
+    job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
+    if os.path.exists(job_file):
+        sep = os.getenv("SEP")
+        queue_seconds = 0
+        queue_length = 0
+        job_info = None
+        with open(job_file, "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                job = line.strip().split(sep)
+                if job[0] == video_id:
+                    job_info = job
+                elif job[1] in ["queued"]:
+                    queue_length += 1
+                    queue_seconds += int(job[4])
+        if job_info:
+            if job_info[1] == "processing":
+                estimated_time = int(job_info[4]) * 30
+                start_time = int(job_info[-2])
+                elapsed_time = time.time() - start_time
+                progress = min(int((elapsed_time / estimated_time) * 100), 99)
+                return Text2VideoOutput(
+                    id=job_info[0],
+                    model=os.getenv("MODEL"),
+                    status=job_info[1],
+                    progress=progress,
+                    created_at=int(job_info[2]),
+                    seconds=job_info[4],
+                    duration=elapsed_time,
+                    estimated_time=max(estimated_time - int(elapsed_time), 0)//60,
+                    queue_length=0,
+                    error=job_info[-1] if job_info[1] == "error" else ""
+                )
+            else:
+                return Text2VideoOutput(
+                    id=job_info[0],
+                    model=os.getenv("MODEL"),
+                    status=job_info[1],
+                    progress=100 if job_info[1] == "completed" else 0,
+                    created_at=int(job_info[2]),
+                    seconds=job_info[4],
+                    duration=job_info[-3],
+                    estimated_time=queue_seconds//2,
+                    queue_length=queue_length,
+                    error=job_info[-1] if job_info[1] == "error" else ""
+                )
 
-    model_info = {
-        "object": "list",
-        "data": [
-            {
-                "id": model_name_or_path,
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "opea",
-                "root": model_name_or_path,
-                "parent": None,
-                "max_model_len": None,
-                "permission": [],
-            }
-        ],
+    content = {
+        "error": {
+            "message": f"Video with id {video_id} not found.",
+            "code": "404"
+        }
     }
-    return model_info
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
 
 
 @register_microservice(
@@ -129,7 +158,15 @@ async def text2video(input_data: Text2VideoInput = Depends(resolve_request)) -> 
         return input_data
     start = time.time()
     if component_loader:
-        results = await component_loader.invoke(input_data)
+        try:
+            job_id = await component_loader.invoke(input_data)
+            results = generate_response(job_id)
+        except ValueError as ve:
+            error_content = {"error": {"message": str(ve), "code": "400"}}
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=error_content)
+        except Exception as e:
+            error_content = {"error": {"message": f"Internal server error: {e}", "code": "500"}}
+            return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_content)
     else:
         raise RuntimeError("Component loader is not initialized.")
     latency = time.time() - start
@@ -147,33 +184,11 @@ async def text2video(input_data: Text2VideoInput = Depends(resolve_request)) -> 
 )
 @register_statistics(names=["opea_service@text2video"])
 async def get_video(video_id: str):
-    job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
-    if os.path.exists(job_file):
-        sep = os.getenv("SEP")
-        with open(job_file, "r") as f:
-            lines = f.readlines()
-            for line in lines:
-                job = line.strip().split(sep)
-                if job[0] == video_id:
-                    return Text2VideoOutput(
-                        id=job[0],
-                        model=os.getenv("MODEL"),
-                        status=job[1],
-                        progress=100 if job[1] == "completed" else 0,
-                        created_at=int(job[2]),
-                        seconds=job[4],
-                        size=job[5],
-                        quality=job[6],
-                        error=job[13] if job[1] == "error" else ""
-                    )
-
-    content = {
-        "error": {
-            "message": f"Video with id {video_id} not found.",
-            "code": "404"
-        }
-    }
-    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
+    try:
+        return generate_response(video_id)
+    except Exception as e:
+        error_content = {"error": {"message": f"Internal server error: {e}", "code": "500"}}
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_content)
 
 
 @register_microservice(
@@ -186,37 +201,20 @@ async def get_video(video_id: str):
 )
 @register_statistics(names=["opea_service@text2video"])
 async def get_video_content(video_id: str):
-    job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
-    if os.path.exists(job_file):
-        sep = os.getenv("SEP")
-        with open(job_file, "r") as f:
-            lines = f.readlines()
-            for line in lines:
-                job = line.strip().split(sep)
-                if job[0] == video_id:
-                    if job[1] != "completed":
-                        return Text2VideoOutput(
-                            id=job[0],
-                            model=os.getenv("MODEL"),
-                            status=job[1],
-                            progress=0,
-                            created_at=int(job[2]),
-                            seconds=job[4],
-                            size=job[5],
-                            quality=job[6],
-                        )
-                    else:
-                        video_file = os.path.join(os.getenv("VIDEO_DIR"), video_id, "output.mp4")
-                        if os.path.exists(video_file):
-                            return FileResponse(video_file, media_type="video/mp4", filename=f"{video_id}.mp4")
-
-    content = {
-        "error": {
-            "message": f"Video with id {video_id} not found.",
-            "code": "404"
-        }
-    }
-    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=content)
+    try:
+        res = generate_response(video_id)
+        if isinstance(res, JSONResponse):
+            return res
+        if res.status == "completed":
+            video_path = os.path.join(os.getenv("VIDEO_DIR"), video_id, "output.mp4")
+            if os.path.exists(video_path):
+                return FileResponse(video_path, media_type="video/mp4", filename=f"{video_id}.mp4")
+            else:
+                error_content = {"error": {"message": f"Video file for id {video_id} not found.", "code": "404"}}
+                return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=error_content)
+    except Exception as e:
+        error_content = {"error": {"message": f"Internal server error: {e}", "code": "500"}}
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_content)
 
 
 def main():
@@ -226,13 +224,11 @@ def main():
     global component_loader
 
     parser = argparse.ArgumentParser(description="Text-to-Video Microservice")
-    parser.add_argument("--model_name_or_path", type=str, default="Wan-AI/Wan2.2-TI2V-5B-Diffusers", help="Model name or path.")
+    parser.add_argument("--model_name_or_path", type=str, default="InfinteTalk", help="Model name or path.")
     parser.add_argument("--video_dir", type=str, default="/home/user/video", help="Video output directory.")
 
     args = parser.parse_args()
-
-    if not os.environ.get("MODEL"):
-        os.environ["MODEL"] = args.model_name_or_path
+    os.environ["MODEL"] = args.model_name_or_path
     os.environ["VIDEO_DIR"] = args.video_dir
     os.environ["SEP"] = "$###$"
     text2video_component_name = os.getenv("TEXT2VIDEO_COMPONENT_NAME", "OPEA_TEXT2VIDEO")

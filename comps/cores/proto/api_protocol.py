@@ -1113,7 +1113,8 @@ class Text2VideoInput:
         steps: Optional[int] = Form(50),
         seed: Optional[int] = Form(42),
         guide_scale: Optional[float] = Form(5.0),
-        size: Optional[str] = Form("720x1280")
+        size: Optional[str] = Form("720x1280"),
+        logo_video: Optional[bool] = Form(False)
     ):
         self.prompt = prompt
         self.input_reference = input_reference
@@ -1128,6 +1129,7 @@ class Text2VideoInput:
         self.seed = seed
         self.guide_scale = guide_scale
         self.size = size
+        self.logo_video = logo_video
 
 
 class Text2VideoOutput(BaseModel):
@@ -1137,9 +1139,10 @@ class Text2VideoOutput(BaseModel):
     status: str
     progress: int
     created_at: int
-    size: str
+    estimated_time: int
+    queue_length: int
+    duration: int
     seconds: str
-    quality: str
     error: str = ""
 
 

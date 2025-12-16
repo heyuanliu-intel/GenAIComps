@@ -6,6 +6,8 @@ import time
 import random
 import json
 import fcntl
+import io
+import soundfile as sf
 
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
@@ -48,25 +50,6 @@ class OpeaText2Video(OpeaComponent):
         job_file = os.path.join(self.video_dir, "job.txt")
         created = time.time()
         job_id = f"video_{int(created)}_{random.randint(1000, 9999)}"
-        # id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed
-        status = "queued"
-        quality = "standard"
-        job = [
-            job_id,
-            status,
-            int(created),
-            input.prompt,
-            input.seconds,
-            input.size,
-            quality,
-            input.fps,
-            input.shift,
-            input.steps,
-            input.guide_scale,
-            input.audio_guide_scale,
-            input.seed
-        ]
-
         job_dir = os.path.join(self.video_dir, job_id)
         os.makedirs(job_dir, exist_ok=True)
         input_json = os.path.join(job_dir, "input.json")
@@ -85,6 +68,7 @@ class OpeaText2Video(OpeaComponent):
             with open(image_file, "wb") as img_f:
                 img_f.write(contents)
 
+        audio_durations = []
         if input.audio and isinstance(input.audio, list):
             audio = {}
             for idx, audio_file in enumerate(input.audio):
@@ -93,10 +77,47 @@ class OpeaText2Video(OpeaComponent):
                 contents = await audio_file.read()
                 with open(audio_path, "wb") as audio_f:
                     audio_f.write(contents)
+                try:
+                    with sf.SoundFile(io.BytesIO(contents)) as f:
+                        duration = f.frames / f.samplerate
+                        audio_durations.append(duration)
+                except Exception as e:
+                    raise ValueError(f"Could not get audio duration for {audio_file.filename}: {e}")
             input_json_content["cond_audio"] = audio
 
         with open(input_json, "w") as f:
             json.dump(input_json_content, f, indent=4)
+
+        logger.info(f"Input JSON for job {job_id}: {json.dump(input_json_content, f, indent=4)}")
+        seconds = min(int(input.seconds), min(audio_durations) if audio_durations else int(input.seconds))
+        logger.info(f"set audio seconds to {seconds} and audio durations for job {job_id}: {audio_durations}")
+        if seconds <= 0:
+            raise ValueError("The provided audio files have non-positive durations.")
+
+        status = "queued"
+        quality = "standard"
+        generate_duration = 0
+        start_time = 0
+        end_time = 0
+        job = [
+            job_id,
+            status,
+            int(created),
+            input.prompt,
+            seconds,
+            input.size,
+            quality,
+            input.fps,
+            input.shift,
+            input.steps,
+            input.guide_scale,
+            input.audio_guide_scale,
+            input.seed,
+            input.logo_video,
+            generate_duration,
+            start_time,
+            end_time
+        ]
 
         sep = os.getenv("SEP", "##$##")
         line = sep.join(map(str, job)) + "\n"
@@ -110,16 +131,7 @@ class OpeaText2Video(OpeaComponent):
                 fcntl.flock(f, fcntl.LOCK_UN)
 
         logger.info(f"Job {job_id} queued with prompt: {input.prompt}")
-        return Text2VideoOutput(
-            id=job_id,
-            model=os.getenv("MODEL"),
-            status=status,
-            progress=0,
-            created_at=int(created),
-            seconds=str(input.seconds),
-            size=input.size,
-            quality=quality,
-        )
+        return job_id
 
     def check_health(self) -> bool:
         """

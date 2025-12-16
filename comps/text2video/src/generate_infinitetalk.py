@@ -274,6 +274,40 @@ def process_tts_multi(text, save_dir, voice1, voice2):
     return s1, s2, save_path_sum
 
 
+def update_job(job_processed, args):
+    # If a job was processed, rewrite the entire job file
+    job_file = os.path.join(args.video_dir, "job.txt")
+    sep = args.sep
+    if job_processed:
+        with open(job_file, "r+", encoding="utf-8") as f:
+            if fcntl:
+                fcntl.flock(f, fcntl.LOCK_EX)
+            # Re-read the file to get the latest content before writing
+            f.seek(0)
+            lines_before_write = [line.strip() for line in f if line.strip()]
+
+            # Find the job by ID and update it
+            job_id_to_update = job_processed[0]
+            found = False
+            for i, line in enumerate(lines_before_write):
+                if line.startswith(job_id_to_update + sep):
+                    lines_before_write[i] = sep.join(map(str, job_processed))
+                    found = True
+                    break
+
+            # If the job was somehow removed from the file, add the new status at the end
+            if not found:
+                lines_before_write.append(sep.join(map(str, job_processed)))
+
+            # Write the updated content back to the file
+            f.seek(0)
+            f.truncate()
+            for line in lines_before_write:
+                f.write(line + "\n")
+            if fcntl:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+
 def generate(args):
     rank = int(os.getenv("RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -364,16 +398,19 @@ def generate(args):
             job_processed = None
             for i, line in enumerate(lines):
                 parts = line.split(sep)
-                if len(parts) < 13:
+                if len(parts) < 17:
                     continue
 
-                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed = parts[:13]
+                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time = parts[:17]
                 try:
                     if status == "queued":
                         # Process the first queued job found
+                        generate_start_time = time.time()
+                        job = [id, "processing", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, generate_start_time, end_time]
+                        update_job(job, args)
+
                         fps = int(fps)
                         num_frames = int(seconds) * fps + 1
-
                         generated_list = []
                         job_dir = os.path.join(args.video_dir, id)
                         os.makedirs(job_dir, exist_ok=True)
@@ -425,9 +462,8 @@ def generate(args):
                                 logging.info("Generating video ...")
 
                                 for idx, items in enumerate(zip(*conds_list)):
-                                    print(items)
                                     input_clip = {}
-                                    input_clip["prompt"] = input_data["prompt"] if input_data["prompt"] and len(input_data["prompt"]) > 0 else ""
+                                    input_clip["prompt"] = input_data.get("prompt", " ")
                                     input_clip["cond_video"] = items[0]
 
                                     if "audio_type" in input_data:
@@ -461,18 +497,20 @@ def generate(args):
 
                                     input_clip["cond_audio"] = cond_audio
 
+                                    logging.info(f"generate video using input_clip: {json.dumps(input_clip)}")
+
                                     video = wan_i2v.generate_infinitetalk(
                                         input_clip,
                                         size_buckget=args.size,
                                         motion_frame=args.motion_frame,
-                                        frame_num=num_frames,
+                                        frame_num=81,
                                         shift=float(shift),
                                         sampling_steps=int(steps),
                                         text_guide_scale=float(guide_scale),
                                         audio_guide_scale=float(audio_guide_scale),
                                         seed=int(seed),
                                         offload_model=args.offload_model,
-                                        max_frames_num=num_frames if args.mode == "clip" else args.max_frame_num,
+                                        max_frames_num=args.max_frame_num,
                                         color_correction_strength=args.color_correction_strength,
                                         extra_args=args,
                                     )
@@ -483,49 +521,18 @@ def generate(args):
                                     sum_video = torch.cat(generated_list, dim=1)
                                     save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False)
 
-                        status = "completed"
-                        job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed]
+                        generate_end_time = time.time()
+                        job_processed = [id, "completed", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, generate_end_time - generate_start_time), generate_start_time, generate_end_time, ""]
                         break  # Exit after processing one job to rewrite the file
                 except Exception as e:
-                    if rank == 0:
-                        logging.error(f"Job worker encountered an error: {e}")
-                    status = "error"
-                    job_processed = [id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, str(e)]
+                    logging.error(f"error: {e}")
+                    generate_end_time = time.time()
+                    job_processed = [id, "error", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, generate_end_time - generate_start_time), generate_start_time, generate_end_time, str(e)]
                     break
 
-            # If a job was processed, rewrite the entire job file
-            if job_processed:
-                with open(job_file, "r+", encoding="utf-8") as f:
-                    if fcntl:
-                        fcntl.flock(f, fcntl.LOCK_EX)
-                    # Re-read the file to get the latest content before writing
-                    f.seek(0)
-                    lines_before_write = [line.strip() for line in f if line.strip()]
-
-                    # Find the job by ID and update it
-                    job_id_to_update = job_processed[0]
-                    found = False
-                    for i, line in enumerate(lines_before_write):
-                        if line.startswith(job_id_to_update + sep):
-                            lines_before_write[i] = sep.join(map(str, job_processed))
-                            found = True
-                            break
-
-                    # If the job was somehow removed from the file, add the new status at the end
-                    if not found:
-                        lines_before_write.append(sep.join(map(str, job_processed)))
-
-                    # Write the updated content back to the file
-                    f.seek(0)
-                    f.truncate()
-                    for line in lines_before_write:
-                        f.write(line + "\n")
-                    if fcntl:
-                        fcntl.flock(f, fcntl.LOCK_UN)
-
+            update_job(job_processed, args)
         except Exception as e:
-            if rank == 0:
-                logging.error(f"Job worker encountered an error: {e}")
+            logging.error(f"Job worker encountered an error: {e}")
         time.sleep(1.0)
 
 

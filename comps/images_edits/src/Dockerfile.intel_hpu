@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools uv && \
     $uvpip -r /home/user/comps/images_edits/src/requirements-cpu.txt && \
     $uvpip numpy==1.26.4 && \
     $uvpip python-multipart && \
-    $uvpip 'git+https://github.com/yingjie-han/optimum-habana.git@aice/v1.22.0-qwenimageedit' && \
+    $uvpip 'git+https://github.com/HabanaAI/optimum-habana-fork.git@aice/v1.22.0' && \
     $uvpip git+https://github.com/huggingface/diffusers
 
 USER user

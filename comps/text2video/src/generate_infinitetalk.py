@@ -490,7 +490,7 @@ def generate(args):
                 if len(parts) < 17:
                     continue
 
-                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time = parts[:18]
+                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time = parts[:17]
                 try:
                     if status in ["queued", "processing"]:
                         # Process the first queued job found

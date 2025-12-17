@@ -104,6 +104,7 @@ def generate_response(video_id) -> Text2VideoOutput:
                     job = line.strip().split(sep)
                     if job[0] == video_id:
                         job_info = job
+                        queue_estimated_time_in_minutes += int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 3
                         break
 
                     if job[1] == "queued":

@@ -61,11 +61,11 @@ def initialize(
                 kwargs["use_hpu_graphs"] = use_hpu_graphs
                 kwargs["gaudi_config"] = gaudi_config
                 kwargs["token"] = token
-                adapt_transformers_to_gaudi()
 
                 if "qwen-image" in model_name_or_path.lower():
                     from optimum.habana.diffusers import GaudiQwenImagePipeline
 
+                    adapt_transformers_to_gaudi()
                     pipe = GaudiQwenImagePipeline.from_pretrained(
                         model_name_or_path,
                         **kwargs,
@@ -74,6 +74,7 @@ def initialize(
                 elif "stable-diffusion-3" in model_name_or_path.lower():
                     from optimum.habana.diffusers import GaudiStableDiffusion3Pipeline
 
+                    adapt_transformers_to_gaudi()
                     pipe = GaudiStableDiffusion3Pipeline.from_pretrained(
                         model_name_or_path,
                         **kwargs,
@@ -81,13 +82,23 @@ def initialize(
                 elif "stable-diffusion" in model_name_or_path.lower() or "flux" in model_name_or_path.lower():
                     from optimum.habana.diffusers import AutoPipelineForText2Image
 
+                    adapt_transformers_to_gaudi()
                     pipe = AutoPipelineForText2Image.from_pretrained(
                         model_name_or_path,
                         **kwargs,
                     )
+                elif "z-image" in model_name_or_path.lower():
+                    from optimum.habana.diffusers import GaudiStableDiffusionZImagePipeline
+
+                    pipe = GaudiStableDiffusionZImagePipeline.from_pretrained(
+                        model_name_or_path,
+                        low_cpu_mem_usage=False,
+                        **kwargs,
+                    )
+
                 else:
                     raise NotImplementedError(
-                        "Only support qwen-image, stable-diffusion, stable-diffusion-xl, stable-diffusion-3 and flux now, "
+                        "Only support qwen-image, stable-diffusion, stable-diffusion-xl, stable-diffusion-3, flux and z-image now, "
                         + f"model {model_name_or_path} not supported."
                     )
             elif device == "cpu":

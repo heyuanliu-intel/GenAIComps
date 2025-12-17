@@ -4,6 +4,7 @@
 import argparse
 import os
 import time
+import fcntl
 
 from fastapi import Depends, Request, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -86,19 +87,24 @@ def generate_response(video_id) -> Text2VideoOutput:
         queue_length = 0
         job_info = None
         with open(job_file, "r") as f:
-            lines = f.readlines()
-            for line in lines:
-                job = line.strip().split(sep)
-                if job[0] == video_id:
-                    job_info = job
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                lines = f.readlines()
+                for line in lines:
+                    job = line.strip().split(sep)
+                    if job[0] == video_id:
+                        job_info = job
+                        break
 
-                if job[1] in ["queued", "processing"]:
-                    queue_length += 1
-                    queue_estimated_time_in_minutes += int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 2
+                    if job[1] in ["queued", "processing"]:
+                        queue_length += 1
+                        queue_estimated_time_in_minutes += int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 3
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
         if job_info:
             if job_info[1] == "processing":
-                estimated_time = int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 2
+                estimated_time = int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 3
                 start_time = int(job_info[-2])
                 elapsed_time = int(time.time()) - start_time
                 progress = int(min(int((elapsed_time / (estimated_time * 60)) * 100), 99))

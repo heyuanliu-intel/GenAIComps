@@ -16,11 +16,7 @@ import numpy as np
 import torch.distributed as dist
 import soundfile as sf
 import pyloudnorm as pyln
-
-try:
-    import fcntl
-except ImportError:
-    fcntl = None
+import fcntl
 
 from einops import rearrange
 from kokoro import KPipeline
@@ -48,7 +44,7 @@ def _parse_args():
     parser = argparse.ArgumentParser(description="Generate a image or video from a text prompt or image using Wan")
     parser.add_argument("--task", type=str, default="infinitetalk-14B", choices=list(WAN_CONFIGS.keys()), help="The task to run.")
     parser.add_argument("--size", type=str, default="infinitetalk-480", choices=list(SIZE_CONFIGS.keys()), help="The buckget size of the generated video. The aspect ratio of the output video will follow that of the input image.",)
-    parser.add_argument("--max_frame_num", type=int, default=1000, help="The max frame lenght of the generated video.")
+    parser.add_argument("--max_frame_num", type=int, default=100000, help="The max frame lenght of the generated video.")
     parser.add_argument("--ckpt_dir", type=str, default="/hf/Wan2.1-I2V-14B-480P", help="The path to the Wan checkpoint directory.")
     parser.add_argument("--infinitetalk_dir", type=str, default="/hf/InfiniteTalk/single/infinitetalk.safetensors", help="The path to the InfiniteTalk checkpoint directory.")
     parser.add_argument("--wav2vec_dir", type=str, default="/hf/chinese-wav2vec2-base", help="The path to the wav2vec checkpoint directory.")
@@ -280,31 +276,31 @@ def update_job(job_processed, args):
     sep = args.sep
     if job_processed:
         with open(job_file, "r+", encoding="utf-8") as f:
-            if fcntl:
-                fcntl.flock(f, fcntl.LOCK_EX)
-            # Re-read the file to get the latest content before writing
-            f.seek(0)
-            lines_before_write = [line.strip() for line in f if line.strip()]
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                # Re-read the file to get the latest content before writing
+                f.seek(0)
+                lines_before_write = [line.strip() for line in f if line.strip()]
 
-            # Find the job by ID and update it
-            job_id_to_update = job_processed[0]
-            found = False
-            for i, line in enumerate(lines_before_write):
-                if line.startswith(job_id_to_update + sep):
-                    lines_before_write[i] = sep.join(map(str, job_processed))
-                    found = True
-                    break
+                # Find the job by ID and update it
+                job_id_to_update = job_processed[0]
+                found = False
+                for i, line in enumerate(lines_before_write):
+                    if line.startswith(job_id_to_update + sep):
+                        lines_before_write[i] = sep.join(map(str, job_processed))
+                        found = True
+                        break
 
-            # If the job was somehow removed from the file, add the new status at the end
-            if not found:
-                lines_before_write.append(sep.join(map(str, job_processed)))
+                # If the job was somehow removed from the file, add the new status at the end
+                if not found:
+                    lines_before_write.append(sep.join(map(str, job_processed)))
 
-            # Write the updated content back to the file
-            f.seek(0)
-            f.truncate()
-            for line in lines_before_write:
-                f.write(line + "\n")
-            if fcntl:
+                # Write the updated content back to the file
+                f.seek(0)
+                f.truncate()
+                for line in lines_before_write:
+                    f.write(line + "\n")
+            finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
 
 
@@ -382,16 +378,17 @@ def generate(args):
     job_file = os.path.join(args.video_dir, "job.txt")
     while True:
         try:
+            time.sleep(4.0)
             if not os.path.exists(job_file):
                 time.sleep(1.0)
                 continue
 
             # Read all jobs
             with open(job_file, "r", encoding="utf-8") as f:
-                if fcntl:
-                    fcntl.flock(f, fcntl.LOCK_SH)
-                lines = [line.strip() for line in f if line.strip()]
-                if fcntl:
+                fcntl.flock(f, fcntl.LOCK_SH)
+                try:
+                    lines = [line.strip() for line in f if line.strip()]
+                finally:
                     fcntl.flock(f, fcntl.LOCK_UN)
 
             sep = args.sep
@@ -407,10 +404,11 @@ def generate(args):
                         # Process the first queued job found
                         generate_start_time = time.time()
                         job = [id, "processing", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, int(generate_start_time), end_time]
-                        update_job(job, args)
+                        if rank == 0:
+                            update_job(job, args)
 
-                        fps = int(fps)
-                        num_frames = int(seconds) * fps + 1
+                        fps = 24
+                        num_frames = int(seconds) * fps + 1 if int(seconds) <= 3 else 81
                         generated_list = []
                         job_dir = os.path.join(args.video_dir, id)
                         os.makedirs(job_dir, exist_ok=True)
@@ -503,9 +501,9 @@ def generate(args):
                                         input_clip,
                                         size_buckget=args.size,
                                         motion_frame=args.motion_frame,
-                                        frame_num=81,
+                                        frame_num=num_frames,
                                         shift=float(shift),
-                                        sampling_steps=int(steps),
+                                        sampling_steps=40,
                                         text_guide_scale=float(guide_scale),
                                         audio_guide_scale=float(audio_guide_scale),
                                         seed=int(seed),
@@ -519,7 +517,7 @@ def generate(args):
 
                                 if rank == 0:
                                     sum_video = torch.cat(generated_list, dim=1)
-                                    save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False)
+                                    save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
 
                         generate_end_time = time.time()
                         job_processed = [id, "completed", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), ""]
@@ -530,7 +528,8 @@ def generate(args):
                     job_processed = [id, "error", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), str(e)]
                     break
 
-            update_job(job_processed, args)
+            if rank == 0:
+                update_job(job_processed, args)
         except Exception as e:
             logging.error(f"Job worker encountered an error: {e}")
         time.sleep(1.0)

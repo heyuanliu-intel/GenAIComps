@@ -6,13 +6,17 @@ import time
 import random
 import json
 import fcntl
-import io
-import soundfile as sf
+import librosa
+import json
 
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
 
 logger = CustomLogger("opea_Text2Video")
+
+
+def get_audio_duration(file_path):
+    return librosa.get_duration(filename=file_path)
 
 
 @OpeaComponentRegistry.register("OPEA_TEXT2VIDEO")
@@ -76,12 +80,8 @@ class OpeaText2Video(OpeaComponent):
                 contents = await audio_file.read()
                 with open(audio_path, "wb") as audio_f:
                     audio_f.write(contents)
-                    try:
-                        with sf.SoundFile(io.BytesIO(contents)) as f:
-                            duration = f.frames / f.samplerate
-                            audio_durations.append(duration)
-                    except Exception as e:
-                        raise ValueError(f"Could not get audio duration for {audio_file.filename}: {e}")
+                audio_durations.append(get_audio_duration(audio_path))
+
             input_json_content["cond_audio"] = audio
 
         with open(input_json, "w") as f:

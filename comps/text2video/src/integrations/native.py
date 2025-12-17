@@ -16,7 +16,7 @@ logger = CustomLogger("opea_Text2Video")
 
 
 def get_audio_duration(file_path):
-    return librosa.get_duration(filename=file_path)
+    return librosa.get_duration(path=file_path)
 
 
 @OpeaComponentRegistry.register("OPEA_TEXT2VIDEO")

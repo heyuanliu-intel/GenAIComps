@@ -17,18 +17,110 @@ import torch.distributed as dist
 import soundfile as sf
 import pyloudnorm as pyln
 import fcntl
+import imageio
 
+from tqdm import tqdm
 from einops import rearrange
 from kokoro import KPipeline
 from src.audio_analysis.wav2vec2 import Wav2Vec2Model
 from transformers import Wav2Vec2FeatureExtractor
 from wan.utils.segvideo import shot_detect
-from wan.utils.multitalk_utils import save_video_ffmpeg
+from wan.utils.multitalk_utils import save_video_ffmpeg, cache_video
 from wan.utils.utils import str2bool, is_video, split_wav_librosa
 from wan.configs import SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
 
 
 warnings.filterwarnings("ignore")
+
+
+def save_video_with_logo(gen_video_samples, save_path, vocal_audio_list, fps=25, quality=5, high_quality_save=False):
+    def save_video(frames, save_path, fps, quality=9, ffmpeg_params=None):
+        writer = imageio.get_writer(save_path, fps=fps, quality=quality, ffmpeg_params=ffmpeg_params)
+        for frame in tqdm(frames, desc="Saving video"):
+            frame = np.array(frame)
+            writer.append_data(frame)
+        writer.close()
+
+    save_path_tmp = save_path + "-temp.mp4"
+
+    if high_quality_save:
+        cache_video(
+            tensor=gen_video_samples.unsqueeze(0),
+            save_file=save_path_tmp,
+            fps=fps,
+            nrow=1,
+            normalize=True,
+            value_range=(-1, 1),
+        )
+    else:
+        video_audio = (gen_video_samples + 1) / 2  # C T H W
+        video_audio = video_audio.permute(1, 2, 3, 0).cpu().numpy()
+        video_audio = np.clip(video_audio * 255, 0, 255).astype(np.uint8)  # to [0, 255]
+        save_video(video_audio, save_path_tmp, fps=fps, quality=quality)
+
+    # crop audio according to video length
+    C, T, H, W = gen_video_samples.shape
+    duration = T / fps
+    save_path_crop_audio = save_path + "-cropaudio.wav"
+    final_command = [
+        "ffmpeg",
+        "-i",
+        vocal_audio_list[0],
+        "-t",
+        f"{duration}",
+        save_path_crop_audio,
+    ]
+    subprocess.run(final_command, check=True)
+
+    save_path = save_path + ".mp4"
+    if high_quality_save:
+        final_command = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            save_path_tmp,
+            "-i",
+            save_path_crop_audio,
+            "-c:v",
+            "libx264",
+            "-crf",
+            "0",
+            "-preset",
+            "veryslow",
+            "-c:a",
+            "aac",
+            "-shortest",
+            save_path,
+        ]
+        subprocess.run(final_command, check=True)
+        os.remove(save_path_tmp)
+        os.remove(save_path_crop_audio)
+    else:
+        final_command = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            save_path_tmp,
+            "-i",
+            save_path_crop_audio,
+            "-i",
+            "/home/user/video/intel_logo.mp4",
+            "-filter_complex",
+            f"[2:v]scale=w={W}:h={H},setdar=0x0[2v],[0:v][1:a][2v][2:a]concat=n=2:v=1:a=1[v][a]",
+            "-map", "[v]",
+            "-map", "[a]",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "-vsync",
+            "passthrough",
+            save_path,
+        ]
+        subprocess.run(final_command, check=True)
+        os.remove(save_path_tmp)
+        os.remove(save_path_crop_audio)
 
 
 def _validate_args(args):
@@ -398,7 +490,7 @@ def generate(args):
                 if len(parts) < 17:
                     continue
 
-                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time = parts[:17]
+                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time = parts[:18]
                 try:
                     if status in ["queued", "processing"]:
                         # Process the first queued job found
@@ -517,7 +609,10 @@ def generate(args):
 
                                 if rank == 0:
                                     sum_video = torch.cat(generated_list, dim=1)
-                                    save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
+                                    if logo_video == "True":
+                                        save_video_with_logo(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
+                                    else:
+                                        save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
 
                         generate_end_time = time.time()
                         job_processed = [id, "completed", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), ""]

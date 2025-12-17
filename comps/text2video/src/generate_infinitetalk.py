@@ -609,7 +609,7 @@ def generate(args):
 
                                 if rank == 0:
                                     sum_video = torch.cat(generated_list, dim=1)
-                                    if logo_video == "True":
+                                    if logo_video.lower() == "true":
                                         save_video_with_logo(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
                                     else:
                                         save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)

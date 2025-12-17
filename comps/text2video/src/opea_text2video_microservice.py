@@ -5,6 +5,7 @@ import argparse
 import os
 import time
 import fcntl
+import shutil
 
 from fastapi import Depends, Request, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -79,6 +80,15 @@ async def resolve_request(request: Request):
     return Text2VideoInput(**validated_params)
 
 
+def calculate_progress(job_info):
+    estimated_time = int(job_info[4]) if int(job_info[9]) <= 10 else int(job_info[4]) * 3
+    start_time = int(job_info[15])
+    elapsed_time = int(time.time()) - start_time
+    progress = int(min(int((elapsed_time / (estimated_time * 60)) * 100), 99))
+    left_time = int(max(1, int(estimated_time - (elapsed_time / 60))))
+    return progress, left_time
+
+
 def generate_response(video_id) -> Text2VideoOutput:
     job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
     if os.path.exists(job_file):
@@ -96,18 +106,20 @@ def generate_response(video_id) -> Text2VideoOutput:
                         job_info = job
                         break
 
-                    if job[1] in ["queued", "processing"]:
+                    if job[1] == "queued":
                         queue_length += 1
                         queue_estimated_time_in_minutes += int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 3
+
+                    if job[1] == "processing":
+                        progress, left_time = calculate_progress(job)
+                        queue_length += 1
+                        queue_estimated_time_in_minutes += left_time
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
 
         if job_info:
             if job_info[1] == "processing":
-                estimated_time = int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 3
-                start_time = int(job_info[-2])
-                elapsed_time = int(time.time()) - start_time
-                progress = int(min(int((elapsed_time / (estimated_time * 60)) * 100), 99))
+                progress, left_time = calculate_progress(job_info)
                 return Text2VideoOutput(
                     id=job_info[0],
                     model=os.getenv("MODEL"),
@@ -116,7 +128,7 @@ def generate_response(video_id) -> Text2VideoOutput:
                     created_at=int(job_info[2]),
                     seconds=job_info[4],
                     duration=0,
-                    estimated_time=max(1, int(estimated_time - (elapsed_time / 60))),
+                    estimated_time=left_time,
                     queue_length=0,
                     error=job_info[-1] if job_info[1] == "error" else ""
                 )
@@ -195,6 +207,81 @@ async def text2video(input_data: Text2VideoInput = Depends(resolve_request)) -> 
 async def get_video(video_id: str):
     try:
         return generate_response(video_id)
+    except Exception as e:
+        error_content = {"error": {"message": f"Internal server error: {e}", "code": "500"}}
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_content)
+
+
+@register_microservice(
+    name="opea_service@text2video",
+    service_type=ServiceType.TEXT2VIDEO,
+    endpoint="/v1/videos/{video_id}",
+    host="0.0.0.0",
+    port=9396,
+    methods=["DELETE"],
+)
+@register_statistics(names=["opea_service@text2video"])
+async def delete_video(video_id: str):
+    try:
+        job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
+        if not os.path.exists(job_file):
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"error": {"message": f"Job queue is missing and video with id {video_id} not found.", "code": "404"}},
+            )
+
+        sep = os.getenv("SEP")
+        deleted_job_info = None
+        updated_lines = []
+        job_found = False
+
+        with open(job_file, "r+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                lines = f.readlines()
+                for line in lines:
+                    job = line.strip().split(sep)
+                    if job[0] == video_id:
+                        job_found = True
+                        if job[1] == "processing":
+                            return JSONResponse(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                content={"error": {"message": f"Video with id {video_id} is processing and cannot be deleted.", "code": "400"}},
+                            )
+                        deleted_job_info = job
+                    else:
+                        updated_lines.append(line)
+
+                if not job_found:
+                    return JSONResponse(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        content={"error": {"message": f"Video with id {video_id} not found.", "code": "404"}},
+                    )
+
+                # Rewrite the file without the deleted line
+                f.seek(0)
+                f.truncate()
+                f.writelines(updated_lines)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+        if deleted_job_info:
+            video_folder_path = os.path.join(os.getenv("VIDEO_DIR"), deleted_job_info[0])
+            if os.path.isdir(video_folder_path):
+                shutil.rmtree(video_folder_path)
+            return Text2VideoOutput(
+                id=deleted_job_info[0],
+                model=os.getenv("MODEL"),
+                status="deleted",
+                progress=0,
+                created_at=int(deleted_job_info[2]),
+                seconds=deleted_job_info[4],
+                duration=int(deleted_job_info[14]),
+                estimated_time=0,
+                queue_length=0,
+                error=""
+            )
+
     except Exception as e:
         error_content = {"error": {"message": f"Internal server error: {e}", "code": "500"}}
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_content)

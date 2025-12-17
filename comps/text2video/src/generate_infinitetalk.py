@@ -378,7 +378,7 @@ def generate(args):
     job_file = os.path.join(args.video_dir, "job.txt")
     while True:
         try:
-            time.sleep(4.0)
+            time.sleep(10.0)
             if not os.path.exists(job_file):
                 time.sleep(1.0)
                 continue

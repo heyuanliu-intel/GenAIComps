@@ -123,6 +123,31 @@ def save_video_with_logo(gen_video_samples, save_path, vocal_audio_list, fps=25,
         os.remove(save_path_crop_audio)
 
 
+def find_max_matching_frame(max_value: int, default_value: int) -> int:
+    """
+    Finds the largest integer less than or equal to max_value
+    that can be expressed in the form 4*n + 1.
+
+    Args:
+        max_value: The upper bound for the search.
+
+    Returns:
+        The largest number matching the pattern, or None if no such
+        number exists within the given limit (e.g., if max_value < 1).
+    """
+    # The smallest number of the form 4*n + 1 (for n>=0) is 1.
+    if max_value < 1:
+        return default_value
+
+    # Start from max_value and check downwards.
+    for number in range(max_value, 0, -1):
+        # A number is of the form 4*n + 1 if its remainder when divided by 4 is 1.
+        if number % 4 == 1:
+            return number
+
+    return default_value  # Should not be reached if max_value >= 1
+
+
 def _validate_args(args):
     # Basic check
     assert args.ckpt_dir is not None, "Please specify the checkpoint directory."
@@ -478,155 +503,167 @@ def generate(args):
                 time.sleep(1.0)
                 continue
 
-            # Read all jobs
-            with open(job_file, "r", encoding="utf-8") as f:
-                fcntl.flock(f, fcntl.LOCK_SH)
+            job_to_process = None
+            if rank == 0:
+                with open(job_file, "r+", encoding="utf-8") as f:
+                    fcntl.flock(f, fcntl.LOCK_EX)
+                    try:
+                        lines = [line.strip() for line in f if line.strip()]
+                        updated_lines = []
+                        job_found = False
+                        for line in lines:
+                            parts = line.strip().split(args.sep)
+                            if not job_found and len(parts) >= 17 and parts[1] == "queued":
+                                job_found = True
+                                parts[1] = "processing"  # Mark as processing
+                                parts[15] = str(int(time.time()))  # Set start time
+                                job_to_process = parts
+                                updated_lines.append(args.sep.join(map(str, parts)) + "\n")
+                            else:
+                                updated_lines.append(line + "\n")
+
+                        if job_found:
+                            f.seek(0)
+                            f.truncate()
+                            f.writelines(updated_lines)
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
+
+            if world_size > 1:
+                job_list = [job_to_process] if rank == 0 else [None]
+                dist.broadcast_object_list(job_list, src=0)
+                job_to_process = job_list[0]
+
+            if job_to_process:
                 try:
-                    lines = [line.strip() for line in f if line.strip()]
-                finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
+                    id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time, *error_msg_parts = job_to_process
+                    generate_start_time = float(start_time)
 
-            sep = args.sep
-            job_processed = None
-            for i, line in enumerate(lines):
-                parts = line.split(sep)
-                if len(parts) < 17:
-                    continue
+                    fps = fps
+                    num_frames = find_max_matching_frame(int(seconds) * fps + 1, 5) if int(seconds) <= 3 else 81
+                    generated_list = []
+                    job_dir = os.path.join(args.video_dir, id)
+                    os.makedirs(job_dir, exist_ok=True)
+                    input_json = os.path.join(job_dir, "input.json")
+                    audio_save_dir = os.path.join(job_dir, "audio")
+                    save_file = os.path.join(job_dir, "output")
+                    with open(input_json, "r", encoding="utf-8") as f:
+                        input_data = json.load(f)
 
-                id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time = parts[:17]
-                try:
-                    if status in ["queued", "processing"]:
-                        # Process the first queued job found
-                        generate_start_time = time.time()
-                        job = [id, "processing", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, int(generate_start_time), end_time]
-                        if rank == 0:
-                            update_job(job, args)
+                        audio_save_dir = os.path.join(audio_save_dir, input_data["cond_video"].split("/")[-1].split(".")[0])
+                        os.makedirs(audio_save_dir, exist_ok=True)
 
-                        fps = 24
-                        num_frames = int(seconds) * fps + 1 if int(seconds) <= 3 else 81
-                        generated_list = []
-                        job_dir = os.path.join(args.video_dir, id)
-                        os.makedirs(job_dir, exist_ok=True)
-                        input_json = os.path.join(job_dir, "input.json")
-                        audio_save_dir = os.path.join(job_dir, "audio")
-                        save_file = os.path.join(job_dir, "output")
-                        with open(input_json, "r", encoding="utf-8") as f:
-                            input_data = json.load(f)
+                        conds_list = []
 
-                            with open(input_json, "r", encoding="utf-8") as f:
-                                input_data = json.load(f)
-
-                                audio_save_dir = os.path.join(audio_save_dir, input_data["cond_video"].split("/")[-1].split(".")[0])
-                                os.makedirs(audio_save_dir, exist_ok=True)
-
-                                conds_list = []
-
-                                if args.scene_seg and is_video(input_data["cond_video"]):
-                                    time_list, cond_list = shot_detect(input_data["cond_video"], audio_save_dir)
-                                    if len(time_list) == 0:
-                                        conds_list.append([input_data["cond_video"]])
-                                        conds_list.append([input_data["cond_audio"]["person1"]])
-                                        if len(input_data["cond_audio"]) == 2:
-                                            conds_list.append([input_data["cond_audio"]["person2"]])
-                                    else:
-                                        audio1_list = split_wav_librosa(input_data["cond_audio"]["person1"], time_list, audio_save_dir)
-                                        conds_list.append(cond_list)
-                                        conds_list.append(audio1_list)
-                                        if len(input_data["cond_audio"]) == 2:
-                                            audio2_list = split_wav_librosa(input_data["cond_audio"]["person2"], time_list, audio_save_dir)
-                                            conds_list.append(audio2_list)
-                                else:
-                                    conds_list.append([input_data["cond_video"]])
-                                    conds_list.append([input_data["cond_audio"]["person1"]])
-                                    if len(input_data["cond_audio"]) == 2:
-                                        conds_list.append([input_data["cond_audio"]["person2"]])
-
+                        if args.scene_seg and is_video(input_data["cond_video"]):
+                            time_list, cond_list = shot_detect(input_data["cond_video"], audio_save_dir)
+                            if len(time_list) == 0:
+                                conds_list.append([input_data["cond_video"]])
+                                conds_list.append([input_data["cond_audio"]["person1"]])
                                 if len(input_data["cond_audio"]) == 2:
-                                    new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(input_data["cond_audio"]["person1"], input_data["cond_audio"]["person2"], input_data["audio_type"])
-                                    sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                                    conds_list.append([input_data["cond_audio"]["person2"]])
+                            else:
+                                audio1_list = split_wav_librosa(input_data["cond_audio"]["person1"], time_list, audio_save_dir)
+                                conds_list.append(cond_list)
+                                conds_list.append(audio1_list)
+                                if len(input_data["cond_audio"]) == 2:
+                                    audio2_list = split_wav_librosa(input_data["cond_audio"]["person2"], time_list, audio_save_dir)
+                                    conds_list.append(audio2_list)
+                        else:
+                            conds_list.append([input_data["cond_video"]])
+                            conds_list.append([input_data["cond_audio"]["person1"]])
+                            if len(input_data["cond_audio"]) == 2:
+                                conds_list.append([input_data["cond_audio"]["person2"]])
+
+                        if len(input_data["cond_audio"]) == 2:
+                            new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(input_data["cond_audio"]["person1"], input_data["cond_audio"]["person2"], input_data["audio_type"])
+                            sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                            sf.write(sum_audio, sum_human_speechs, 16000)
+                            input_data["video_audio"] = sum_audio
+                        else:
+                            human_speech = audio_prepare_single(input_data["cond_audio"]["person1"])
+                            sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                            sf.write(sum_audio, human_speech, 16000)
+                            input_data["video_audio"] = sum_audio
+                        logging.info("Generating video ...")
+
+                        for idx, items in enumerate(zip(*conds_list)):
+                            input_clip = {}
+                            input_clip["prompt"] = input_data.get("prompt", " ")
+                            input_clip["cond_video"] = items[0]
+
+                            if "audio_type" in input_data:
+                                input_clip["audio_type"] = input_data["audio_type"]
+                            if "bbox" in input_data:
+                                input_clip["bbox"] = input_data["bbox"]
+                            cond_audio = {}
+                            if args.audio_mode == "localfile":
+                                if len(input_data["cond_audio"]) == 2:
+                                    new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(items[1], items[2], input_data["audio_type"])
+                                    audio_embedding_1 = get_embedding(new_human_speech1, wav2vec_feature_extractor, audio_encoder)
+                                    audio_embedding_2 = get_embedding(new_human_speech2, wav2vec_feature_extractor, audio_encoder)
+                                    emb1_path = os.path.join(audio_save_dir, "1.pt")
+                                    emb2_path = os.path.join(audio_save_dir, "2.pt")
+                                    sum_audio = os.path.join(audio_save_dir, "sum.wav")
                                     sf.write(sum_audio, sum_human_speechs, 16000)
-                                    input_data["video_audio"] = sum_audio
-                                else:
-                                    human_speech = audio_prepare_single(input_data["cond_audio"]["person1"])
-                                    sum_audio = os.path.join(audio_save_dir, "sum_all.wav")
+                                    torch.save(audio_embedding_1, emb1_path)
+                                    torch.save(audio_embedding_2, emb2_path)
+                                    cond_audio["person1"] = emb1_path
+                                    cond_audio["person2"] = emb2_path
+                                    input_clip["video_audio"] = sum_audio
+                                elif len(input_data["cond_audio"]) == 1:
+                                    human_speech = audio_prepare_single(items[1])
+                                    audio_embedding = get_embedding(human_speech, wav2vec_feature_extractor, audio_encoder)
+                                    emb_path = os.path.join(audio_save_dir, "1.pt")
+                                    sum_audio = os.path.join(audio_save_dir, "sum.wav")
                                     sf.write(sum_audio, human_speech, 16000)
-                                    input_data["video_audio"] = sum_audio
-                                logging.info("Generating video ...")
+                                    torch.save(audio_embedding, emb_path)
+                                    cond_audio["person1"] = emb_path
+                                    input_clip["video_audio"] = sum_audio
 
-                                for idx, items in enumerate(zip(*conds_list)):
-                                    input_clip = {}
-                                    input_clip["prompt"] = input_data.get("prompt", " ")
-                                    input_clip["cond_video"] = items[0]
+                            input_clip["cond_audio"] = cond_audio
 
-                                    if "audio_type" in input_data:
-                                        input_clip["audio_type"] = input_data["audio_type"]
-                                    if "bbox" in input_data:
-                                        input_clip["bbox"] = input_data["bbox"]
-                                    cond_audio = {}
-                                    if args.audio_mode == "localfile":
-                                        if len(input_data["cond_audio"]) == 2:
-                                            new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(items[1], items[2], input_data["audio_type"])
-                                            audio_embedding_1 = get_embedding(new_human_speech1, wav2vec_feature_extractor, audio_encoder)
-                                            audio_embedding_2 = get_embedding(new_human_speech2, wav2vec_feature_extractor, audio_encoder)
-                                            emb1_path = os.path.join(audio_save_dir, "1.pt")
-                                            emb2_path = os.path.join(audio_save_dir, "2.pt")
-                                            sum_audio = os.path.join(audio_save_dir, "sum.wav")
-                                            sf.write(sum_audio, sum_human_speechs, 16000)
-                                            torch.save(audio_embedding_1, emb1_path)
-                                            torch.save(audio_embedding_2, emb2_path)
-                                            cond_audio["person1"] = emb1_path
-                                            cond_audio["person2"] = emb2_path
-                                            input_clip["video_audio"] = sum_audio
-                                        elif len(input_data["cond_audio"]) == 1:
-                                            human_speech = audio_prepare_single(items[1])
-                                            audio_embedding = get_embedding(human_speech, wav2vec_feature_extractor, audio_encoder)
-                                            emb_path = os.path.join(audio_save_dir, "1.pt")
-                                            sum_audio = os.path.join(audio_save_dir, "sum.wav")
-                                            sf.write(sum_audio, human_speech, 16000)
-                                            torch.save(audio_embedding, emb_path)
-                                            cond_audio["person1"] = emb_path
-                                            input_clip["video_audio"] = sum_audio
+                            logging.info(f"generate video using input_clip: {json.dumps(input_clip)}")
 
-                                    input_clip["cond_audio"] = cond_audio
+                            n_prompt = "bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards, mutated hands and fingers, poorly drawn, blurry, dehydrated, bad proportions, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused limbs, ugly, disgusting"
 
-                                    logging.info(f"generate video using input_clip: {json.dumps(input_clip)}")
+                            video = wan_i2v.generate_infinitetalk(
+                                input_clip,
+                                size_buckget=args.size,
+                                motion_frame=args.motion_frame,
+                                frame_num=num_frames,
+                                shift=float(shift),
+                                sampling_steps=int(steps),
+                                text_guide_scale=float(guide_scale),
+                                audio_guide_scale=float(audio_guide_scale),
+                                seed=int(seed),
+                                offload_model=args.offload_model,
+                                max_frames_num=args.max_frame_num,
+                                n_prompt=n_prompt,
+                                color_correction_strength=args.color_correction_strength,
+                                extra_args=args,
+                            )
 
-                                    video = wan_i2v.generate_infinitetalk(
-                                        input_clip,
-                                        size_buckget=args.size,
-                                        motion_frame=args.motion_frame,
-                                        frame_num=num_frames,
-                                        shift=float(shift),
-                                        sampling_steps=int(steps),
-                                        text_guide_scale=float(guide_scale),
-                                        audio_guide_scale=float(audio_guide_scale),
-                                        seed=int(seed),
-                                        offload_model=args.offload_model,
-                                        max_frames_num=args.max_frame_num,
-                                        color_correction_strength=args.color_correction_strength,
-                                        extra_args=args,
-                                    )
+                            generated_list.append(video)
 
-                                    generated_list.append(video)
+                        if rank == 0:
+                            sum_video = torch.cat(generated_list, dim=1)
+                            if logo_video.lower() == "true":
+                                save_video_with_logo(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
+                            else:
+                                save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
 
-                                if rank == 0:
-                                    sum_video = torch.cat(generated_list, dim=1)
-                                    if logo_video.lower() == "true":
-                                        save_video_with_logo(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
-                                    else:
-                                        save_video_ffmpeg(sum_video, save_file, [input_data["video_audio"]], high_quality_save=False, fps=fps)
-
-                        generate_end_time = time.time()
-                        job_processed = [id, "completed", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), ""]
-                        break  # Exit after processing one job to rewrite the file
+                    generate_end_time = time.time()
+                    job_processed = [id, "completed", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), ""]
+                    if rank == 0:
+                        update_job(job_processed, args)
                 except Exception as e:
                     logging.error(f"error: {e}")
                     generate_end_time = time.time()
                     job_processed = [id, "error", created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, max(0, int(generate_end_time - generate_start_time)), int(generate_start_time), int(generate_end_time), str(e)]
-                    break
+                    if rank == 0:
+                        update_job(job_processed, args)
 
-            if rank == 0:
-                update_job(job_processed, args)
         except Exception as e:
             logging.error(f"Job worker encountered an error: {e}")
         time.sleep(1.0)

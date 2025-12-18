@@ -613,28 +613,26 @@ def generate(args):
                                     new_human_speech1, new_human_speech2, sum_human_speechs = audio_prepare_multi(items[1], items[2], input_data["audio_type"])
                                     audio_embedding_1 = get_embedding(new_human_speech1, wav2vec_feature_extractor, audio_encoder)
                                     audio_embedding_2 = get_embedding(new_human_speech2, wav2vec_feature_extractor, audio_encoder)
-                                    emb1_path = os.path.join(audio_save_dir, "1.pt")
-                                    emb2_path = os.path.join(audio_save_dir, "2.pt")
+                                    # emb1_path = os.path.join(audio_save_dir, "1.pt")
+                                    # emb2_path = os.path.join(audio_save_dir, "2.pt")
                                     sum_audio = os.path.join(audio_save_dir, "sum.wav")
                                     sf.write(sum_audio, sum_human_speechs, 16000)
-                                    torch.save(audio_embedding_1, emb1_path)
-                                    torch.save(audio_embedding_2, emb2_path)
-                                    cond_audio["person1"] = emb1_path
-                                    cond_audio["person2"] = emb2_path
+                                    # torch.save(audio_embedding_1, emb1_path)
+                                    # torch.save(audio_embedding_2, emb2_path)
+                                    cond_audio["person1"] = audio_embedding_1
+                                    cond_audio["person2"] = audio_embedding_2
                                     input_clip["video_audio"] = sum_audio
                                 elif len(input_data["cond_audio"]) == 1:
                                     human_speech = audio_prepare_single(items[1])
                                     audio_embedding = get_embedding(human_speech, wav2vec_feature_extractor, audio_encoder)
-                                    emb_path = os.path.join(audio_save_dir, "1.pt")
+                                    # emb_path = os.path.join(audio_save_dir, "1.pt")
                                     sum_audio = os.path.join(audio_save_dir, "sum.wav")
                                     sf.write(sum_audio, human_speech, 16000)
-                                    torch.save(audio_embedding, emb_path)
-                                    cond_audio["person1"] = emb_path
+                                    # torch.save(audio_embedding, emb_path)
+                                    cond_audio["person1"] = audio_embedding
                                     input_clip["video_audio"] = sum_audio
 
                             input_clip["cond_audio"] = cond_audio
-
-                            logging.info(f"generate video using input_clip: {json.dumps(input_clip)}")
 
                             video = wan_i2v.generate_infinitetalk(
                                 input_clip,

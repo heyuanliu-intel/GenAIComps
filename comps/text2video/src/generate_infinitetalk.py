@@ -467,6 +467,9 @@ def generate(args):
         wan_i2v.vram_management = True
         wan_i2v.enable_vram_management(num_persistent_param_in_dit=args.num_persistent_param_in_dit)
 
+    # Initialize models once before the loop to prevent race conditions
+    wav2vec_feature_extractor, audio_encoder = custom_init("cpu", args.wav2vec_dir)
+
     job_file = os.path.join(args.video_dir, "job.txt")
     while True:
         try:
@@ -513,7 +516,6 @@ def generate(args):
                             with open(input_json, "r", encoding="utf-8") as f:
                                 input_data = json.load(f)
 
-                                wav2vec_feature_extractor, audio_encoder = custom_init("cpu", args.wav2vec_dir)
                                 audio_save_dir = os.path.join(audio_save_dir, input_data["cond_video"].split("/")[-1].split(".")[0])
                                 os.makedirs(audio_save_dir, exist_ok=True)
 
@@ -595,7 +597,7 @@ def generate(args):
                                         motion_frame=args.motion_frame,
                                         frame_num=num_frames,
                                         shift=float(shift),
-                                        sampling_steps=40,
+                                        sampling_steps=int(steps),
                                         text_guide_scale=float(guide_scale),
                                         audio_guide_scale=float(audio_guide_scale),
                                         seed=int(seed),

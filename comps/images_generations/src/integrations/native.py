@@ -158,17 +158,33 @@ class OpeaImagesGenerations(OpeaComponent):
         guidance_scale = self.config.get("guidance_scale", 4.0)
         true_cfg_scale = self.config.get("true_cfg_scale", 4.0)
 
-        if input.quality is not None:
-            if input.quality.lower() == "high":
-                num_inference_steps = 50
-            elif input.quality.lower() == "medium":
-                num_inference_steps = 25
-            elif input.quality.lower() == "low":
-                num_inference_steps = 10
+        # Special step settings for GaudiStableDiffusionZImagePipeline (low=5, medium=9, high=20)
+        is_zimage = hasattr(self.pipe, "__class__") and self.pipe.__class__.__name__ == "GaudiStableDiffusionZImagePipeline"
+        if is_zimage:
+            if input.quality is not None:
+                if input.quality.lower() == "high":
+                    num_inference_steps = 20
+                elif input.quality.lower() == "medium":
+                    num_inference_steps = 9
+                elif input.quality.lower() == "low":
+                    num_inference_steps = 5
+                else:
+                    num_inference_steps = self.config.get("num_inference_steps", 9)
+            else:
+                num_inference_steps = self.config.get("num_inference_steps", 9)
+        else:
+            # Step settings for other models (low=10, medium=25, high=50)
+            if input.quality is not None:
+                if input.quality.lower() == "high":
+                    num_inference_steps = 50
+                elif input.quality.lower() == "medium":
+                    num_inference_steps = 25
+                elif input.quality.lower() == "low":
+                    num_inference_steps = 10
+                else:
+                    num_inference_steps = self.config.get("num_inference_steps", 25)
             else:
                 num_inference_steps = self.config.get("num_inference_steps", 25)
-        else:
-            num_inference_steps = self.config.get("num_inference_steps", 25)
         results_openai = []
         width = None
         height = None

@@ -34,13 +34,15 @@ warnings.filterwarnings("ignore")
 
 
 def save_video_with_logo(gen_video_samples, save_path, vocal_audio_list, fps=25, quality=5, high_quality_save=False):
+
     def save_video(frames, save_path, fps, quality=9, ffmpeg_params=None):
-        writer = imageio.get_writer(save_path, fps=fps, quality=quality, ffmpeg_params=ffmpeg_params)
+        writer = imageio.get_writer(
+            save_path, fps=fps, quality=quality, ffmpeg_params=ffmpeg_params
+        )
         for frame in tqdm(frames, desc="Saving video"):
             frame = np.array(frame)
             writer.append_data(frame)
         writer.close()
-
     save_path_tmp = save_path + "-temp.mp4"
 
     if high_quality_save:
@@ -50,10 +52,10 @@ def save_video_with_logo(gen_video_samples, save_path, vocal_audio_list, fps=25,
             fps=fps,
             nrow=1,
             normalize=True,
-            value_range=(-1, 1),
+            value_range=(-1, 1)
         )
     else:
-        video_audio = (gen_video_samples + 1) / 2  # C T H W
+        video_audio = (gen_video_samples+1)/2  # C T H W
         video_audio = video_audio.permute(1, 2, 3, 0).cpu().numpy()
         video_audio = np.clip(video_audio * 255, 0, 255).astype(np.uint8)  # to [0, 255]
         save_video(video_audio, save_path_tmp, fps=fps, quality=quality)
@@ -67,28 +69,35 @@ def save_video_with_logo(gen_video_samples, save_path, vocal_audio_list, fps=25,
         "-i",
         vocal_audio_list[0],
         "-t",
-        f"{duration}",
+        f'{duration}',
         save_path_crop_audio,
     ]
     subprocess.run(final_command, check=True)
-
+    logo_w = 1280
+    logo_h = 720
+    if W / H > logo_w / logo_h:
+        ratio = H / logo_h
+        resized_logo_h = H
+        resized_logo_w = logo_w * ratio
+        pad_w = (W - resized_logo_w) / 2
+        pad_h = 0
+    else:
+        ratio = W / logo_w
+        resized_logo_w = W
+        resized_logo_h = logo_h * ratio
+        pad_h = (H - resized_logo_h) / 2
+        pad_w = 0
     save_path = save_path + ".mp4"
     if high_quality_save:
         final_command = [
             "ffmpeg",
             "-y",
-            "-i",
-            save_path_tmp,
-            "-i",
-            save_path_crop_audio,
-            "-c:v",
-            "libx264",
-            "-crf",
-            "0",
-            "-preset",
-            "veryslow",
-            "-c:a",
-            "aac",
+            "-i", save_path_tmp,
+            "-i", save_path_crop_audio,
+            "-c:v", "libx264",
+            "-crf", "0",
+            "-preset", "veryslow",
+            "-c:a", "aac",
             "-shortest",
             save_path,
         ]
@@ -106,7 +115,8 @@ def save_video_with_logo(gen_video_samples, save_path, vocal_audio_list, fps=25,
             "-i",
             "/home/user/video/intel_logo.mp4",
             "-filter_complex",
-            f"[2:v]scale=w={W}:h={H},setdar=0x0[2v],[0:v][1:a][2v][2:a]concat=n=2:v=1:a=1[v][a]",
+            f"[2:v]scale=w={int(resized_logo_w)}:h={int(resized_logo_h)},"
+            f"setdar=0x0,pad={W}:{H}:{int(pad_w)}:{int(pad_h)}:black[2v],[0:v][1:a][2v][2:a]concat=n=2:v=1:a=1[v][a]",
             "-map", "[v]",
             "-map", "[a]",
             "-c:v",
@@ -539,7 +549,7 @@ def generate(args):
                     id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time, *error_msg_parts = job_to_process
                     generate_start_time = float(start_time)
 
-                    fps = int(fps)
+                    fps = 25
                     user_frames = int(seconds) * fps + 1
                     num_frames = 81 if user_frames >= 81 else find_max_matching_frame(user_frames, 5)
                     generated_list = []
@@ -626,8 +636,6 @@ def generate(args):
 
                             logging.info(f"generate video using input_clip: {json.dumps(input_clip)}")
 
-                            n_prompt = "bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards, mutated hands and fingers, poorly drawn, blurry, dehydrated, bad proportions, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused limbs, ugly, disgusting"
-
                             video = wan_i2v.generate_infinitetalk(
                                 input_clip,
                                 size_buckget=args.size,
@@ -640,7 +648,6 @@ def generate(args):
                                 seed=int(seed),
                                 offload_model=args.offload_model,
                                 max_frames_num=args.max_frame_num,
-                                n_prompt=n_prompt,
                                 color_correction_strength=args.color_correction_strength,
                                 extra_args=args,
                             )

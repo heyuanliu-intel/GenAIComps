@@ -540,7 +540,8 @@ def generate(args):
                     generate_start_time = float(start_time)
 
                     fps = fps
-                    num_frames = find_max_matching_frame(int(seconds) * fps + 1, 5) if int(seconds) <= 3 else 81
+                    user_frames = int(seconds) * fps + 1
+                    num_frames = 81 if user_frames >= 81 else find_max_matching_frame(user_frames, 5)
                     generated_list = []
                     job_dir = os.path.join(args.video_dir, id)
                     os.makedirs(job_dir, exist_ok=True)

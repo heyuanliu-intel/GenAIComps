@@ -539,7 +539,7 @@ def generate(args):
                     id, status, created_str, prompt, seconds, size, quality, fps, shift, steps, guide_scale, audio_guide_scale, seed, logo_video, generate_duration, start_time, end_time, *error_msg_parts = job_to_process
                     generate_start_time = float(start_time)
 
-                    fps = fps
+                    fps = int(fps)
                     user_frames = int(seconds) * fps + 1
                     num_frames = 81 if user_frames >= 81 else find_max_matching_frame(user_frames, 5)
                     generated_list = []

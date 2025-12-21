@@ -89,6 +89,11 @@ def calculate_progress(job_info):
     return progress, left_time
 
 
+def estimate_queue_time(seconds, steps):
+    steps = max(steps, 1)
+    return int(seconds * steps / 20)
+
+
 def generate_response(video_id) -> Text2VideoOutput:
     job_file = os.path.join(os.getenv("VIDEO_DIR"), "job.txt")
     if os.path.exists(job_file):
@@ -102,14 +107,18 @@ def generate_response(video_id) -> Text2VideoOutput:
                 lines = f.readlines()
                 for line in lines:
                     job = line.strip().split(sep)
+
+                    if len(job) < 17:
+                        continue
+
                     if job[0] == video_id:
                         job_info = job
-                        queue_estimated_time_in_minutes += int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 3
+                        queue_estimated_time_in_minutes += estimate_queue_time(int(job[4]), int(job[9]))
                         break
 
                     if job[1] == "queued":
                         queue_length += 1
-                        queue_estimated_time_in_minutes += int(job[4]) if int(job[9]) <= 10 else int(job[4]) * 3
+                        queue_estimated_time_in_minutes += estimate_queue_time(int(job[4]), int(job[9]))
 
                     if job[1] == "processing":
                         progress, left_time = calculate_progress(job)
@@ -309,6 +318,8 @@ async def get_video_content(video_id: str):
             else:
                 error_content = {"error": {"message": f"Video file for id {video_id} not found.", "code": "404"}}
                 return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=error_content)
+        else:
+            return res
     except Exception as e:
         error_content = {"error": {"message": f"Internal server error: {e}", "code": "500"}}
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=error_content)

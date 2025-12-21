@@ -506,6 +506,7 @@ def generate(args):
     wav2vec_feature_extractor, audio_encoder = custom_init("cpu", args.wav2vec_dir)
 
     job_file = os.path.join(args.video_dir, "job.txt")
+    _no_job_start_time = None
     while True:
         try:
             time.sleep(10.0)
@@ -536,6 +537,33 @@ def generate(args):
                             f.seek(0)
                             f.truncate()
                             f.writelines(updated_lines)
+                            _no_job_start_time = None  # Reset no job timer
+                        else:
+                            # No job found, check if we should recycle a completed job
+                            if _no_job_start_time is None:
+                                _no_job_start_time = time.time()
+                            else:
+                                elapsed = time.time() - _no_job_start_time
+                                if elapsed >= 60:  # 1 minute
+                                    # Find the completed job with the smallest seconds value
+                                    completed_jobs = [
+                                        (i, line)
+                                        for i, line in enumerate(lines)
+                                        if len(line.strip().split(args.sep)) >= 17 and line.strip().split(args.sep)[1] == "completed"
+                                    ]
+                                    if completed_jobs:
+                                        # Find the job with the minimum seconds
+                                        min_idx, min_line = min(
+                                            completed_jobs,
+                                            key=lambda x: int(x[1].strip().split(args.sep)[4])
+                                        )
+                                        min_parts = min_line.strip().split(args.sep)
+                                        min_parts[1] = "queued"
+                                        updated_lines[min_idx] = args.sep.join(map(str, min_parts)) + "\n"
+                                        f.seek(0)
+                                        f.truncate()
+                                        f.writelines(updated_lines)
+                                        _no_job_start_time = None  # Reset no job timer
                     finally:
                         fcntl.flock(f, fcntl.LOCK_UN)
 

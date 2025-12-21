@@ -523,7 +523,7 @@ def generate(args):
                         job_found = False
                         for line in lines:
                             parts = line.strip().split(args.sep)
-                            if not job_found and len(parts) >= 17 and parts[1] == "queued":
+                            if not job_found and len(parts) >= 17 and parts[1] in ["queued", "processing"]:
                                 job_found = True
                                 parts[1] = "processing"  # Mark as processing
                                 parts[15] = str(int(time.time()))  # Set start time

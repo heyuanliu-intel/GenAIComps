@@ -6,6 +6,7 @@ import os
 import time
 import fcntl
 import shutil
+import math
 
 from fastapi import Depends, Request, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -81,7 +82,7 @@ async def resolve_request(request: Request):
 
 
 def calculate_progress(job_info):
-    estimated_time = int(job_info[4]) if int(job_info[9]) <= 10 else int(job_info[4]) * 3
+    estimated_time = estimate_queue_time(int(job_info[4]), int(job_info[9]))
     start_time = int(job_info[15])
     elapsed_time = int(time.time()) - start_time
     progress = int(min(int((elapsed_time / (estimated_time * 60)) * 100), 99))
@@ -91,7 +92,7 @@ def calculate_progress(job_info):
 
 def estimate_queue_time(seconds, steps):
     steps = max(steps, 1)
-    return int(seconds * steps / 20)
+    return math.ceil(seconds * 1.16 * steps / 20) if seconds <= 10 else math.ceil(int(seconds * steps / 20)) if seconds <= 15 else math.ceil(int(seconds * 0.83 * steps / 20))
 
 
 def generate_response(video_id) -> Text2VideoOutput:
@@ -151,7 +152,7 @@ def generate_response(video_id) -> Text2VideoOutput:
                     created_at=int(job_info[2]),
                     seconds=job_info[4],
                     duration=job_info[14],
-                    estimated_time=0 if job_info[1] == "completed" else queue_estimated_time_in_minutes,
+                    estimated_time=0 if job_info[1] == "completed" else int(queue_estimated_time_in_minutes),
                     queue_length=0 if job_info[1] == "completed" else queue_length,
                     error=job_info[-1] if job_info[1] == "error" else ""
                 )

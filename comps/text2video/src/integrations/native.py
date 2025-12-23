@@ -8,6 +8,7 @@ import json
 import fcntl
 import librosa
 import json
+import math
 
 from comps import CustomLogger, OpeaComponent, OpeaComponentRegistry, ServiceType
 from comps.cores.proto.api_protocol import Text2VideoInput, Text2VideoOutput
@@ -87,7 +88,7 @@ class OpeaText2Video(OpeaComponent):
         with open(input_json, "w") as f:
             json.dump(input_json_content, f, indent=4)
 
-        seconds = int(min(audio_durations)) if audio_durations else 20
+        seconds = int(math.ceil(min(audio_durations))) if audio_durations else 20
         logger.info(f"set audio seconds to {seconds} and audio durations for job {job_id}: {audio_durations}")
         if seconds <= 0:
             raise ValueError("The provided audio files have non-positive durations.")

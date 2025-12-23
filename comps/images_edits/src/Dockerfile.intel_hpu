@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # HABANA environment
-FROM vault.habana.ai/gaudi-docker/1.21.0/ubuntu22.04/habanalabs/pytorch-installer-2.6.0 AS hpu
+FROM vault.habana.ai/gaudi-docker/1.21.3/ubuntu22.04/habanalabs/pytorch-installer-2.6.0 AS hpu
 RUN useradd -m -s /bin/bash user && \
     mkdir -p /home/user && \
     chown -R user /home/user/
@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools uv && \
     $uvpip -r /home/user/comps/images_edits/src/requirements-cpu.txt && \
     $uvpip numpy==1.26.4 && \
     $uvpip python-multipart && \
-    $uvpip 'git+https://github.com/yingjie-han/optimum-habana.git@aice/v1.22.0-qwenimageedit' && \
+    $uvpip 'git+https://github.com/HabanaAI/optimum-habana-fork.git@aice/v1.22.0' && \
     $uvpip git+https://github.com/huggingface/diffusers
 
 USER user
